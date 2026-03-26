@@ -205,8 +205,8 @@ public class BuildAndDecodeApkTest extends BaseTest {
 
     @Test
     public void valuesGrammaticalGenderTest() throws Exception {
-        compareValuesFiles("values-neuter/strings.xml");
-        compareValuesFiles("values-feminine/strings.xml");
+        compareValuesFiles("values-neuter-v34/strings.xml");
+        compareValuesFiles("values-feminine-v34/strings.xml");
     }
 
     @Test
@@ -256,7 +256,7 @@ public class BuildAndDecodeApkTest extends BaseTest {
 
     @Test
     public void anyDpiTest() throws Exception {
-        compareValuesFiles("values-watch/strings.xml");
+        compareValuesFiles("values-watch-v8/strings.xml");
     }
 
     @Test
@@ -322,8 +322,8 @@ public class BuildAndDecodeApkTest extends BaseTest {
 
     @Test
     public void api23ConfigurationsTest() throws Exception {
-        compareValuesFiles("values-round/strings.xml");
-        compareValuesFiles("values-notround/strings.xml");
+        compareValuesFiles("values-round-v23/strings.xml");
+        compareValuesFiles("values-notround-v23/strings.xml");
     }
 
     @Test
@@ -409,42 +409,42 @@ public class BuildAndDecodeApkTest extends BaseTest {
 
     @Test
     public void drawableNoDpiTest() throws Exception {
-        compareBinaryFolder("res/drawable-nodpi");
+        compareBinaryFolder("res/drawable-nodpi-v4");
     }
 
     @Test
     public void drawableAnyDpiTest() throws Exception {
-        compareBinaryFolder("res/drawable-anydpi");
+        compareBinaryFolder("res/drawable-anydpi-v21");
     }
 
     @Test
     public void drawableNumberedDpiTest() throws Exception {
-        compareBinaryFolder("res/drawable-534dpi");
+        compareBinaryFolder("res/drawable-534dpi-v4");
     }
 
     @Test
     public void drawableLdpiTest() throws Exception {
-        compareBinaryFolder("res/drawable-ldpi");
+        compareBinaryFolder("res/drawable-ldpi-v4");
     }
 
     @Test
     public void drawableMdpiTest() throws Exception {
-        compareBinaryFolder("res/drawable-mdpi");
+        compareBinaryFolder("res/drawable-mdpi-v4");
     }
 
     @Test
     public void drawableTvdpiTest() throws Exception {
-        compareBinaryFolder("res/drawable-tvdpi");
+        compareBinaryFolder("res/drawable-tvdpi-v4");
     }
 
     @Test
     public void drawableXhdpiTest() throws Exception {
-        compareBinaryFolder("res/drawable-xhdpi");
+        compareBinaryFolder("res/drawable-xhdpi-v4");
     }
 
     @Test
     public void ninePatchImageColorTest() throws Exception {
-        String fileName = "res/drawable-xhdpi/ninepatch.9.png";
+        String fileName = "res/drawable-xhdpi-v4/ninepatch.9.png";
 
         File control = new File(sTestOrigDir, fileName);
         File test = new File(sTestNewDir, fileName);
@@ -464,7 +464,7 @@ public class BuildAndDecodeApkTest extends BaseTest {
 
     @Test
     public void issue1508Test() throws Exception {
-        String fileName = "res/drawable-xhdpi/btn_zoom_up_normal.9.png";
+        String fileName = "res/drawable-xhdpi-v4/btn_zoom_up_normal.9.png";
 
         File control = new File(sTestOrigDir, fileName);
         File test = new File(sTestNewDir, fileName);
@@ -484,7 +484,7 @@ public class BuildAndDecodeApkTest extends BaseTest {
 
     @Test
     public void issue1511Test() throws Exception {
-        String fileName = "res/drawable-xxhdpi/textfield_activated_holo_dark.9.png";
+        String fileName = "res/drawable-xxhdpi-v4/textfield_activated_holo_dark.9.png";
 
         File control = new File(sTestOrigDir, fileName);
         File test = new File(sTestNewDir, fileName);
@@ -515,7 +515,7 @@ public class BuildAndDecodeApkTest extends BaseTest {
         };
 
         for (String ninePatch : ninePatches) {
-            String fileName = "res/drawable-xxhdpi/" + ninePatch;
+            String fileName = "res/drawable-xxhdpi-v4/" + ninePatch;
 
             File control = new File(sTestOrigDir, fileName);
             File test = new File(sTestNewDir, fileName);
@@ -554,17 +554,12 @@ public class BuildAndDecodeApkTest extends BaseTest {
 
     @Test
     public void drawableXxhdpiTest() throws Exception {
-        compareBinaryFolder("res/drawable-xxhdpi");
-    }
-
-    @Test
-    public void drawableQualifierXxhdpiTest() throws Exception {
         compareBinaryFolder("res/drawable-xxhdpi-v4");
     }
 
     @Test
     public void drawableXxxhdpiTest() throws Exception {
-        compareBinaryFolder("res/drawable-xxxhdpi");
+        compareBinaryFolder("res/drawable-xxxhdpi-v4");
     }
 
     @Test
