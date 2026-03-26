@@ -18,12 +18,12 @@ package brut.androlib.smali;
 
 import brut.androlib.exceptions.AndrolibException;
 import brut.util.OS;
-import org.jf.baksmali.Baksmali;
-import org.jf.baksmali.BaksmaliOptions;
-import org.jf.dexlib2.analysis.InlineMethodResolver;
-import org.jf.dexlib2.dexbacked.DexBackedDexFile;
-import org.jf.dexlib2.dexbacked.DexBackedOdexFile;
-import org.jf.dexlib2.dexbacked.ZipDexContainer;
+import com.android.tools.smali.baksmali.Baksmali;
+import com.android.tools.smali.baksmali.BaksmaliOptions;
+import com.android.tools.smali.dexlib2.analysis.InlineMethodResolver;
+import com.android.tools.smali.dexlib2.dexbacked.DexBackedDexFile;
+import com.android.tools.smali.dexlib2.dexbacked.DexBackedOdexFile;
+import com.android.tools.smali.dexlib2.dexbacked.ZipDexContainer;
 
 import java.io.File;
 import java.io.IOException;
