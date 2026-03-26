@@ -7,9 +7,14 @@ on:
         description: 'Direct download URL of the APK/APKM/APKS/XAPK file'
         required: true
         type: string
-      repo_name:
-        description: 'Name for the new repository to store decompiled APK'
+      repo_owner:
+        description: 'GitHub user or organization where the repository will be created'
         required: true
+        type: string
+      repo_name:
+        description: 'Repository name override (leave empty to auto-generate from APK package name)'
+        required: false
+        default: ''
         type: string
       no_src:
         description: 'Do not decode sources (--no-src / -s)'
@@ -27,12 +32,12 @@ on:
         default: true
         type: boolean
       no_debug_info:
-        description: 'Do not write out debug info (--no-debug-info / -b)'
+        description: 'Do not write out debug info (--no-debug-info)'
         required: false
         default: false
         type: boolean
       keep_broken_res:
-        description: 'Keep broken resources (--keep-broken-res / -k)'
+        description: 'Keep broken resources (--keep-broken-res)'
         required: false
         default: false
         type: boolean
@@ -165,10 +170,10 @@ jobs:
             DECODE_ARGS="$DECODE_ARGS -r"
           fi
           if [ "${{ inputs.no_debug_info }}" = "true" ]; then
-            DECODE_ARGS="$DECODE_ARGS -b"
+            DECODE_ARGS="$DECODE_ARGS --no-debug-info"
           fi
           if [ "${{ inputs.keep_broken_res }}" = "true" ]; then
-            DECODE_ARGS="$DECODE_ARGS -k"
+            DECODE_ARGS="$DECODE_ARGS --keep-broken-res"
           fi
           if [ "${{ inputs.only_main_classes }}" = "true" ]; then
             DECODE_ARGS="$DECODE_ARGS --only-main-classes"
@@ -189,12 +194,37 @@ jobs:
           echo "Decompilation complete."
           ls -la "$OUTPUT_DIR"
 
+      - name: Generate repository name from APK
+        run: |
+          DECOMPILED_DIR="${{ env.DECOMPILED_DIR }}"
+          MANIFEST="$DECOMPILED_DIR/AndroidManifest.xml"
+
+          PACKAGE_NAME=""
+          if [ -f "$MANIFEST" ]; then
+            PACKAGE_NAME=$(sed -n 's/.*package="\([^"]*\)".*/\1/p' "$MANIFEST" | head -1)
+          fi
+
+          USER_NAME="${{ inputs.repo_name }}"
+          if [ -n "$USER_NAME" ]; then
+            REPO_NAME="$USER_NAME"
+            echo "Using user-provided repository name: $REPO_NAME"
+          elif [ -n "$PACKAGE_NAME" ]; then
+            REPO_NAME=$(echo "$PACKAGE_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g' | tr '.' '-')
+            echo "Auto-generated repository name from package: $REPO_NAME"
+          else
+            REPO_NAME="decompiled-apk-$(date +%Y%m%d%H%M%S)"
+            echo "Could not extract package name, using fallback: $REPO_NAME"
+          fi
+
+          echo "REPO_NAME=$REPO_NAME" >> "$GITHUB_ENV"
+          echo "PACKAGE_NAME=$PACKAGE_NAME" >> "$GITHUB_ENV"
+
       - name: Create repository with decompiled content
         env:
           GH_TOKEN: ${{ secrets.ONT }}
         run: |
-          REPO_OWNER="${{ github.repository_owner }}"
-          BASE_NAME="${{ inputs.repo_name }}"
+          REPO_OWNER="${{ inputs.repo_owner }}"
+          BASE_NAME="${{ env.REPO_NAME }}"
           FINAL_NAME="$BASE_NAME"
 
           # Check if repo exists and find available name with suffix
