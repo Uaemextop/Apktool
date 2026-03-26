@@ -166,6 +166,7 @@ public class AaptInvoker {
         cmd.add("--no-version-vectors");
         cmd.add("--no-version-transitions");
         cmd.add("--no-resource-deduping");
+        cmd.add("--no-resource-removal");
         cmd.add("--no-compile-sdk-metadata");
 
         // #3427 - Ignore stricter parsing during aapt2.

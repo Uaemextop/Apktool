@@ -18,6 +18,7 @@ package brut.androlib.res;
 
 import brut.androlib.exceptions.AndrolibException;
 import brut.common.BrutException;
+import brut.common.Log;
 import brut.util.Jar;
 import brut.util.OS;
 import brut.util.OSDetection;
@@ -25,6 +26,7 @@ import brut.util.OSDetection;
 import java.io.File;
 
 public final class AaptManager {
+    private static final String TAG = AaptManager.class.getName();
 
     private AaptManager() {
         // Private constructor for utility class.
@@ -34,13 +36,30 @@ public final class AaptManager {
         return "aapt2";
     }
 
-    public static File getBinaryFile() throws AndrolibException {
-        String binName = getBinaryName();
+    public static String getBinary64Name() {
+        return "aapt2_64";
+    }
 
+    public static File getBinaryFile() throws AndrolibException {
+        return getBinaryFile(false);
+    }
+
+    public static File getBinaryFile(boolean use64) throws AndrolibException {
         if (!OSDetection.is64Bit()) {
-            throw new AndrolibException(binName + " binaries are not available for 32-bit platforms.");
+            throw new AndrolibException(getBinaryName() + " binaries are not available for 32-bit platforms.");
         }
 
+        if (use64) {
+            try {
+                return resolveBinaryFile(getBinary64Name());
+            } catch (AndrolibException ex) {
+                Log.d(TAG, getBinary64Name() + " not available: " + ex.getMessage() + " (falling back to " + getBinaryName() + ")");
+            }
+        }
+        return resolveBinaryFile(getBinaryName());
+    }
+
+    private static File resolveBinaryFile(String binName) throws AndrolibException {
         StringBuilder binPath = new StringBuilder("/prebuilt/");
         if (OSDetection.isUnix()) {
             binPath.append("linux"); // ELF 64-bit LSB executable, x86-64
