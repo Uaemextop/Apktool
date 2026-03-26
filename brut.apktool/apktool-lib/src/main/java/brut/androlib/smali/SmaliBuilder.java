@@ -42,14 +42,19 @@ import java.nio.file.Files;
 public class SmaliBuilder {
     private static final String TAG = SmaliBuilder.class.getName();
 
-    private static final boolean VERBOSE_ERRORS = false;
     private static final boolean PRINT_TOKENS = false;
 
     private final int mApiLevel;
+    private final boolean mVerboseErrors;
 
     public SmaliBuilder(int apiLevel) {
+        this(apiLevel, false);
+    }
+
+    public SmaliBuilder(int apiLevel, boolean verboseErrors) {
         // #3641 - Limit opcode API level to 29 or below (dex version up to 039).
         mApiLevel = Math.min(apiLevel, 29);
+        mVerboseErrors = verboseErrors;
     }
 
     public void build(File smaliDir, File dexFile) throws AndrolibException {
@@ -115,7 +120,7 @@ public class SmaliBuilder {
 
             smaliParser parser = new smaliParser(tokens);
             parser.setApiLevel(mApiLevel);
-            parser.setVerboseErrors(VERBOSE_ERRORS);
+            parser.setVerboseErrors(mVerboseErrors);
 
             smaliParser.smali_file_return result = parser.smali_file();
 
@@ -129,7 +134,7 @@ public class SmaliBuilder {
 
             smaliTreeWalker treeWalker = new smaliTreeWalker(treeStream);
             treeWalker.setApiLevel(mApiLevel);
-            treeWalker.setVerboseErrors(VERBOSE_ERRORS);
+            treeWalker.setVerboseErrors(mVerboseErrors);
             treeWalker.setDexBuilder(dexBuilder);
             treeWalker.smali_file();
 

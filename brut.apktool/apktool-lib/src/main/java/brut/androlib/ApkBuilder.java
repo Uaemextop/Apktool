@@ -63,13 +63,16 @@ public class ApkBuilder {
     }
 
     public void build(File outApk) throws AndrolibException {
+        validateBuildDirectory();
+
         if (mConfig.getJobs() > 1) {
             mWorker = new BackgroundWorker(mConfig.getJobs() - 1);
         }
         try {
             mApkInfo = ApkInfo.load(mApkDir);
             String minSdkVersion = mApkInfo.getSdkInfo().getMinSdkVersion();
-            mSmaliBuilder = new SmaliBuilder(minSdkVersion != null ? SdkInfo.parseSdkInt(minSdkVersion) : 0);
+            mSmaliBuilder = new SmaliBuilder(minSdkVersion != null ? SdkInfo.parseSdkInt(minSdkVersion) : 0,
+                mConfig.isVerbose());
             mAaptInvoker = new AaptInvoker(mApkInfo, mConfig);
 
             String apkName = mApkInfo.getApkFileName();
@@ -106,6 +109,17 @@ public class ApkBuilder {
             if (mWorker != null) {
                 mWorker.shutdownNow();
             }
+        }
+    }
+
+    private void validateBuildDirectory() throws AndrolibException {
+        if (!mApkDir.isDirectory()) {
+            throw new AndrolibException("Could not find build directory: " + mApkDir.getPath());
+        }
+        File apktoolYml = new File(mApkDir, "apktool.yml");
+        if (!apktoolYml.isFile()) {
+            throw new AndrolibException("Could not find apktool.yml in: " + mApkDir.getPath()
+                + ". Is this a decompiled APK directory?");
         }
     }
 

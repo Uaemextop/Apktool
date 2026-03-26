@@ -101,6 +101,9 @@ public class Config {
     }
 
     public void setJobs(int jobs) {
+        if (jobs < 1) {
+            throw new IllegalArgumentException("Number of jobs must be at least 1, got: " + jobs);
+        }
         mJobs = jobs;
     }
 
