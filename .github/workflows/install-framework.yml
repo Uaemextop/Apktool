@@ -8,6 +8,9 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   install-framework:
     runs-on: ubuntu-latest
@@ -47,6 +50,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y wget unzip
           mkdir -p /tmp/android-sdk
+          # Download Android SDK command-line tools (update URL when newer versions are released)
           CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
           wget -q "$CMDLINE_TOOLS_URL" -O /tmp/cmdline-tools.zip
           unzip -q /tmp/cmdline-tools.zip -d /tmp/android-sdk/cmdline-tools

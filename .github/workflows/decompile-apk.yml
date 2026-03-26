@@ -47,6 +47,9 @@ on:
         default: ''
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   decompile:
     runs-on: ubuntu-latest
@@ -186,9 +189,9 @@ jobs:
 
           echo "Creating repository: $REPO_OWNER/$FINAL_NAME"
 
-          # Create the new repository
-          gh repo create "$REPO_OWNER/$FINAL_NAME" --public --description "Decompiled APK: $BASE_NAME" \
-            || gh repo create "$FINAL_NAME" --public --description "Decompiled APK: $BASE_NAME"
+          # Create the new repository (try with owner prefix first, fallback to short name)
+          gh repo create "$REPO_OWNER/$FINAL_NAME" --public \
+            --description "Decompiled APK: $BASE_NAME"
 
           # Push decompiled content
           cd "${{ env.DECOMPILED_DIR }}"
@@ -196,13 +199,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Handle large files gracefully
-          find . -size +100M -type f > /tmp/large-files.txt
-          if [ -s /tmp/large-files.txt ]; then
-            echo "Large files detected, adding to .gitignore:"
-            cat /tmp/large-files.txt
-            cat /tmp/large-files.txt >> .gitignore
-          fi
+          # Handle large files gracefully (GitHub has a 100MB file size limit)
+          find . -size +100M -type f -print0 | while IFS= read -r -d '' large_file; do
+            echo "Large file excluded: $large_file"
+            echo "$large_file" >> .gitignore
+          done
 
           git add -A
           git commit -m "Decompiled APK content from: $BASE_NAME"
