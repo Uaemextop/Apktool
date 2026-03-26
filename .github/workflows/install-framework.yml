@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       apktool_release_tag:
-        description: 'Apktool release tag to download (e.g. v3.0.2). Leave empty to build from source.'
+        description: 'Apktool release tag to download (e.g. v3.0.2). Leave empty to download from latest release.'
         required: false
         type: string
 
@@ -16,35 +16,34 @@ jobs:
     runs-on: ubuntu-latest
     name: Download apktool and install Android 16 framework
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
       - uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v5.0.2
-
-      - name: Obtain apktool.jar
+      - name: Download apktool from latest release
         id: obtain_jar
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          mkdir -p /tmp/apktool-download
           if [ -n "${{ inputs.apktool_release_tag }}" ]; then
             echo "Downloading apktool from release ${{ inputs.apktool_release_tag }}..."
             gh release download "${{ inputs.apktool_release_tag }}" \
+              --repo "${{ github.repository }}" \
               --pattern "apktool-*.jar" --dir /tmp/apktool-download
-            JAR_PATH=$(find /tmp/apktool-download -name "apktool-*.jar" | head -1)
           else
-            echo "Building apktool from source..."
-            ./gradlew build shadowJar proguard
-            JAR_PATH=$(find brut.apktool/apktool-cli/build/libs -name "apktool-*.jar" \
-              ! -name "*-all.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
+            echo "Downloading apktool from latest release..."
+            gh release download --repo "${{ github.repository }}" \
+              --pattern "apktool-*.jar" --dir /tmp/apktool-download
+          fi
+          JAR_PATH=$(find /tmp/apktool-download -name "apktool-*.jar" | head -1)
+          if [ -z "$JAR_PATH" ]; then
+            echo "::error::Failed to download apktool JAR from release"
+            exit 1
           fi
           echo "jar_path=$JAR_PATH" >> "$GITHUB_OUTPUT"
-          echo "Using apktool at: $JAR_PATH"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          echo "Downloaded apktool: $JAR_PATH"
 
       - name: Download Android 16 framework (API 36)
         run: |
