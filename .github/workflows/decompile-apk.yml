@@ -299,9 +299,9 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Set up Git LFS for large files (tracking files over 10MB)
+          # Set up Git LFS for large files (tracking files over 50MB)
           git lfs install
-          find . -size +10M -type f -print0 | while IFS= read -r -d '' large_file; do
+          find . -size +50M -type f -print0 | while IFS= read -r -d '' large_file; do
             # Strip leading ./ for clean LFS tracking patterns
             clean_path="${large_file#./}"
             echo "Tracking large file with LFS: $clean_path"
