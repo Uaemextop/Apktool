@@ -73,6 +73,30 @@ jobs:
             ! -name "*-all.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
           echo "APKTOOL_JAR=$JAR_PATH" >> "$GITHUB_ENV"
 
+      - name: Download Android 16 framework (API 36)
+        run: |
+          sudo apt-get update && sudo apt-get install -y wget unzip
+          mkdir -p /tmp/android-sdk
+          # Download Android SDK command-line tools (update URL when newer versions are released)
+          CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          wget -q "$CMDLINE_TOOLS_URL" -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/android-sdk/cmdline-tools
+          mv /tmp/android-sdk/cmdline-tools/cmdline-tools /tmp/android-sdk/cmdline-tools/latest
+          export ANDROID_HOME=/tmp/android-sdk
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36"
+          FRAMEWORK_PATH="$ANDROID_HOME/platforms/android-36/android.jar"
+          echo "Framework downloaded at: $FRAMEWORK_PATH"
+          ls -la "$FRAMEWORK_PATH"
+
+      - name: Install framework into apktool
+        run: |
+          ANDROID_HOME=/tmp/android-sdk
+          FRAMEWORK_PATH="$ANDROID_HOME/platforms/android-36/android.jar"
+          java -jar "${{ env.APKTOOL_JAR }}" install-framework "$FRAMEWORK_PATH"
+          echo "Android 16 framework installed successfully."
+
       - name: Download APK file
         run: |
           mkdir -p /tmp/apk-download
@@ -199,11 +223,19 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
 
-          # Handle large files gracefully (GitHub has a 100MB file size limit)
+          # Set up Git LFS for large files (GitHub has a 100MB file size limit)
+          git lfs install
           find . -size +100M -type f -print0 | while IFS= read -r -d '' large_file; do
-            echo "Large file excluded: $large_file"
-            echo "$large_file" >> .gitignore
+            # Strip leading ./ for clean LFS tracking patterns
+            clean_path="${large_file#./}"
+            echo "Tracking large file with LFS: $clean_path"
+            git lfs track "$clean_path"
           done
+
+          # Commit .gitattributes first if LFS tracking was added
+          if [ -f .gitattributes ]; then
+            git add .gitattributes
+          fi
 
           git add -A
           git commit -m "Decompiled APK content from: $BASE_NAME"
