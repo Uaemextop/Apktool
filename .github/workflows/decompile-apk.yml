@@ -1,0 +1,253 @@
+name: Decompile APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      apk_url:
+        description: 'Direct download URL of the APK/APKM/APKS/XAPK file'
+        required: true
+        type: string
+      repo_name:
+        description: 'Name for the new repository to store decompiled APK'
+        required: true
+        type: string
+      no_src:
+        description: 'Do not decode sources (--no-src / -s)'
+        required: false
+        default: false
+        type: boolean
+      no_res:
+        description: 'Do not decode resources (--no-res / -r)'
+        required: false
+        default: false
+        type: boolean
+      force:
+        description: 'Force delete destination directory (--force / -f)'
+        required: false
+        default: true
+        type: boolean
+      no_debug_info:
+        description: 'Do not write out debug info (--no-debug-info / -b)'
+        required: false
+        default: false
+        type: boolean
+      keep_broken_res:
+        description: 'Keep broken resources (--keep-broken-res / -k)'
+        required: false
+        default: false
+        type: boolean
+      only_main_classes:
+        description: 'Only disassemble dex classes in root (--only-main-classes)'
+        required: false
+        default: false
+        type: boolean
+      extra_args:
+        description: 'Additional apktool decode arguments (space-separated)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  decompile:
+    runs-on: ubuntu-latest
+    name: Decompile APK and push to repository
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v5.0.2
+
+      - name: Build apktool
+        run: |
+          ./gradlew build shadowJar proguard
+          JAR_PATH=$(find brut.apktool/apktool-cli/build/libs -name "apktool-*.jar" \
+            ! -name "*-all.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
+          echo "APKTOOL_JAR=$JAR_PATH" >> "$GITHUB_ENV"
+
+      - name: Download Android 16 framework (API 36)
+        run: |
+          sudo apt-get update && sudo apt-get install -y wget unzip
+          mkdir -p /tmp/android-sdk
+          # Download Android SDK command-line tools (update URL when newer versions are released)
+          CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          wget -q "$CMDLINE_TOOLS_URL" -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/android-sdk/cmdline-tools
+          mv /tmp/android-sdk/cmdline-tools/cmdline-tools /tmp/android-sdk/cmdline-tools/latest
+          export ANDROID_HOME=/tmp/android-sdk
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36"
+          FRAMEWORK_PATH="$ANDROID_HOME/platforms/android-36/android.jar"
+          echo "Framework downloaded at: $FRAMEWORK_PATH"
+          ls -la "$FRAMEWORK_PATH"
+
+      - name: Install framework into apktool
+        run: |
+          ANDROID_HOME=/tmp/android-sdk
+          FRAMEWORK_PATH="$ANDROID_HOME/platforms/android-36/android.jar"
+          java -jar "${{ env.APKTOOL_JAR }}" install-framework "$FRAMEWORK_PATH"
+          echo "Android 16 framework installed successfully."
+
+      - name: Download APK file
+        run: |
+          mkdir -p /tmp/apk-download
+          FILE_URL="${{ inputs.apk_url }}"
+          FILENAME=$(basename "$FILE_URL" | sed 's/?.*//')
+          # If no extension, default to .apk
+          if [[ "$FILENAME" != *.* ]]; then
+            FILENAME="${FILENAME}.apk"
+          fi
+          wget -q --content-disposition -O "/tmp/apk-download/$FILENAME" "$FILE_URL" \
+            || curl -fSL -o "/tmp/apk-download/$FILENAME" "$FILE_URL"
+          echo "DOWNLOADED_FILE=/tmp/apk-download/$FILENAME" >> "$GITHUB_ENV"
+          echo "Downloaded: $FILENAME"
+          ls -la /tmp/apk-download/
+
+      - name: Convert split APKs to single APK (if needed)
+        run: |
+          FILE="${{ env.DOWNLOADED_FILE }}"
+          EXT="${FILE##*.}"
+          EXT_LOWER=$(echo "$EXT" | tr '[:upper:]' '[:lower:]')
+
+          if [[ "$EXT_LOWER" == "apk" ]]; then
+            echo "File is already an APK, no conversion needed."
+            echo "APK_FILE=$FILE" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          echo "Detected split APK format: .$EXT_LOWER — converting with AntiSplit..."
+
+          # Download AntiSplit-M
+          ANTISPLIT_URL="https://github.com/AntonyJR/AntiSplit-M/releases/latest/download/AntiSplit-M-CLI.jar"
+          wget -q "$ANTISPLIT_URL" -O /tmp/AntiSplit-M-CLI.jar \
+            || curl -fSL -o /tmp/AntiSplit-M-CLI.jar "$ANTISPLIT_URL"
+
+          OUTPUT_APK="/tmp/apk-download/converted.apk"
+          java -jar /tmp/AntiSplit-M-CLI.jar "$FILE" -o "$OUTPUT_APK" \
+            || {
+              echo "AntiSplit-M CLI failed, trying alternative approach..."
+              # Fallback: if it's a zip-based format, try extracting and finding the base APK
+              mkdir -p /tmp/apk-extract
+              unzip -o "$FILE" -d /tmp/apk-extract/ 2>/dev/null || true
+              BASE_APK=$(find /tmp/apk-extract -name "base.apk" -o -name "*.apk" | head -1)
+              if [ -n "$BASE_APK" ]; then
+                cp "$BASE_APK" "$OUTPUT_APK"
+                echo "Extracted base APK from split package."
+              else
+                echo "::error::Could not convert split APK to single APK"
+                exit 1
+              fi
+            }
+
+          echo "APK_FILE=$OUTPUT_APK" >> "$GITHUB_ENV"
+          echo "Converted APK ready at: $OUTPUT_APK"
+
+      - name: Decompile APK
+        run: |
+          DECODE_ARGS="d"
+
+          if [ "${{ inputs.force }}" = "true" ]; then
+            DECODE_ARGS="$DECODE_ARGS -f"
+          fi
+          if [ "${{ inputs.no_src }}" = "true" ]; then
+            DECODE_ARGS="$DECODE_ARGS -s"
+          fi
+          if [ "${{ inputs.no_res }}" = "true" ]; then
+            DECODE_ARGS="$DECODE_ARGS -r"
+          fi
+          if [ "${{ inputs.no_debug_info }}" = "true" ]; then
+            DECODE_ARGS="$DECODE_ARGS -b"
+          fi
+          if [ "${{ inputs.keep_broken_res }}" = "true" ]; then
+            DECODE_ARGS="$DECODE_ARGS -k"
+          fi
+          if [ "${{ inputs.only_main_classes }}" = "true" ]; then
+            DECODE_ARGS="$DECODE_ARGS --only-main-classes"
+          fi
+
+          EXTRA="${{ inputs.extra_args }}"
+          if [ -n "$EXTRA" ]; then
+            DECODE_ARGS="$DECODE_ARGS $EXTRA"
+          fi
+
+          OUTPUT_DIR="/tmp/decompiled-apk"
+          DECODE_ARGS="$DECODE_ARGS -o $OUTPUT_DIR"
+
+          echo "Running: java -jar $APKTOOL_JAR $DECODE_ARGS $APK_FILE"
+          java -jar "${{ env.APKTOOL_JAR }}" $DECODE_ARGS "${{ env.APK_FILE }}"
+
+          echo "DECOMPILED_DIR=$OUTPUT_DIR" >> "$GITHUB_ENV"
+          echo "Decompilation complete."
+          ls -la "$OUTPUT_DIR"
+
+      - name: Create repository with decompiled content
+        env:
+          GH_TOKEN: ${{ secrets.ONT }}
+        run: |
+          REPO_OWNER="${{ github.repository_owner }}"
+          BASE_NAME="${{ inputs.repo_name }}"
+          FINAL_NAME="$BASE_NAME"
+
+          # Check if repo exists and find available name with suffix
+          check_repo_exists() {
+            gh repo view "$REPO_OWNER/$1" > /dev/null 2>&1
+            return $?
+          }
+
+          if check_repo_exists "$FINAL_NAME"; then
+            COUNTER=1
+            while check_repo_exists "${BASE_NAME}_${COUNTER}"; do
+              COUNTER=$((COUNTER + 1))
+            done
+            FINAL_NAME="${BASE_NAME}_${COUNTER}"
+          fi
+
+          echo "Creating repository: $REPO_OWNER/$FINAL_NAME"
+
+          # Create the new repository (try with owner prefix first, fallback to short name)
+          gh repo create "$REPO_OWNER/$FINAL_NAME" --public \
+            --description "Decompiled APK: $BASE_NAME"
+
+          # Push decompiled content
+          cd "${{ env.DECOMPILED_DIR }}"
+          git init
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # Set up Git LFS for large files (GitHub has a 100MB file size limit)
+          git lfs install
+          find . -size +100M -type f -print0 | while IFS= read -r -d '' large_file; do
+            # Strip leading ./ for clean LFS tracking patterns
+            clean_path="${large_file#./}"
+            echo "Tracking large file with LFS: $clean_path"
+            git lfs track "$clean_path"
+          done
+
+          # Commit .gitattributes first if LFS tracking was added
+          if [ -f .gitattributes ]; then
+            git add .gitattributes
+          fi
+
+          git add -A
+          git commit -m "Decompiled APK content from: $BASE_NAME"
+          git branch -M main
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO_OWNER}/${FINAL_NAME}.git"
+          git push -u origin main
+
+          echo "Repository created: https://github.com/$REPO_OWNER/$FINAL_NAME"
+          echo "CREATED_REPO=$REPO_OWNER/$FINAL_NAME" >> "$GITHUB_ENV"
+
+      - name: Summary
+        run: |
+          echo "## Decompilation Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Source URL:** ${{ inputs.apk_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Repository:** [${{ env.CREATED_REPO }}](https://github.com/${{ env.CREATED_REPO }})" >> "$GITHUB_STEP_SUMMARY"

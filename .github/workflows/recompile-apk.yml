@@ -1,0 +1,142 @@
+name: Recompile APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      decompiled_repo_url:
+        description: 'URL of the GitHub repository containing the decompiled APK (e.g. https://github.com/user/repo)'
+        required: true
+        type: string
+      use_aapt2:
+        description: 'Use aapt2 during build (--use-aapt2)'
+        required: false
+        default: true
+        type: boolean
+      force:
+        description: 'Force delete destination directory (--force / -f)'
+        required: false
+        default: true
+        type: boolean
+      no_crunch:
+        description: 'Disable crunching of resource files (--no-crunch / -nc)'
+        required: false
+        default: false
+        type: boolean
+      copy_original:
+        description: 'Copy original AndroidManifest.xml and META-INF (--copy-original / -c)'
+        required: false
+        default: false
+        type: boolean
+      extra_args:
+        description: 'Additional apktool build arguments (space-separated)'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  recompile:
+    runs-on: ubuntu-latest
+    name: Recompile decompiled APK
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: 17
+
+      - uses: gradle/actions/setup-gradle@v5.0.2
+
+      - name: Build apktool
+        run: |
+          ./gradlew build shadowJar proguard
+          JAR_PATH=$(find brut.apktool/apktool-cli/build/libs -name "apktool-*.jar" \
+            ! -name "*-all.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
+          echo "APKTOOL_JAR=$JAR_PATH" >> "$GITHUB_ENV"
+
+      - name: Download Android 16 framework (API 36)
+        run: |
+          sudo apt-get update && sudo apt-get install -y wget unzip
+          mkdir -p /tmp/android-sdk
+          # Download Android SDK command-line tools (update URL when newer versions are released)
+          CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          wget -q "$CMDLINE_TOOLS_URL" -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/android-sdk/cmdline-tools
+          mv /tmp/android-sdk/cmdline-tools/cmdline-tools /tmp/android-sdk/cmdline-tools/latest
+          export ANDROID_HOME=/tmp/android-sdk
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36"
+          FRAMEWORK_PATH="$ANDROID_HOME/platforms/android-36/android.jar"
+          echo "Framework downloaded at: $FRAMEWORK_PATH"
+          ls -la "$FRAMEWORK_PATH"
+
+      - name: Install framework into apktool
+        run: |
+          ANDROID_HOME=/tmp/android-sdk
+          FRAMEWORK_PATH="$ANDROID_HOME/platforms/android-36/android.jar"
+          java -jar "${{ env.APKTOOL_JAR }}" install-framework "$FRAMEWORK_PATH"
+          echo "Android 16 framework installed successfully."
+
+      - name: Clone decompiled APK repository
+        run: |
+          REPO_URL="${{ inputs.decompiled_repo_url }}"
+          # Normalize URL (remove trailing slash)
+          REPO_URL="${REPO_URL%/}"
+          REPO_NAME=$(basename "$REPO_URL")
+
+          git clone "$REPO_URL" "/tmp/decompiled-source"
+          echo "DECOMPILED_DIR=/tmp/decompiled-source" >> "$GITHUB_ENV"
+          echo "REPO_NAME=$REPO_NAME" >> "$GITHUB_ENV"
+          echo "Cloned decompiled APK from: $REPO_URL"
+          ls -la /tmp/decompiled-source/
+
+      - name: Recompile APK
+        run: |
+          BUILD_ARGS="b"
+
+          if [ "${{ inputs.force }}" = "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS -f"
+          fi
+          if [ "${{ inputs.use_aapt2 }}" = "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS --use-aapt2"
+          fi
+          if [ "${{ inputs.no_crunch }}" = "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS -nc"
+          fi
+          if [ "${{ inputs.copy_original }}" = "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS -c"
+          fi
+
+          EXTRA="${{ inputs.extra_args }}"
+          if [ -n "$EXTRA" ]; then
+            BUILD_ARGS="$BUILD_ARGS $EXTRA"
+          fi
+
+          OUTPUT_DIR="/tmp/recompiled-output"
+          BUILD_ARGS="$BUILD_ARGS -o $OUTPUT_DIR/${{ env.REPO_NAME }}.apk"
+
+          echo "Running: java -jar $APKTOOL_JAR $BUILD_ARGS $DECOMPILED_DIR"
+          java -jar "${{ env.APKTOOL_JAR }}" $BUILD_ARGS "${{ env.DECOMPILED_DIR }}"
+
+          echo "OUTPUT_DIR=$OUTPUT_DIR" >> "$GITHUB_ENV"
+          echo "Recompilation complete."
+          ls -la "$OUTPUT_DIR"
+
+      - name: Upload recompiled APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: recompiled-apk
+          path: ${{ env.OUTPUT_DIR }}/*.apk
+
+      - name: Summary
+        run: |
+          echo "## Recompilation Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Source Repository:** ${{ inputs.decompiled_repo_url }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Output APK:** ${{ env.REPO_NAME }}.apk" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Artifact:** recompiled-apk" >> "$GITHUB_STEP_SUMMARY"
