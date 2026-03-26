@@ -18,6 +18,7 @@ updates:
       interval: weekly
       time: "04:00"
       timezone: "America/New_York"
+    open-pull-requests-limit: 15
     groups:
       github-actions:
         patterns:
@@ -33,26 +34,33 @@ updates:
       interval: weekly
       time: "04:00"
       timezone: "America/New_York"
+    open-pull-requests-limit: 15
+    allow:
+      - dependency-type: "all"
     groups:
+      android-tools:
+        patterns:
+          - "com.android.tools:r8"
       commons-libs:
         patterns:
-          - "commons-cli:*"
-          - "commons-io:*"
-          - "org.apache.commons:*"
+          - "commons-cli:commons-cli"
+          - "commons-io:commons-io"
+          - "org.apache.commons:commons-lang3"
+          - "org.apache.commons:commons-text"
       smali:
         patterns:
-          - "org.smali:*"
+          - "org.smali:baksmali"
+          - "org.smali:smali"
       testing:
         patterns:
-          - "junit:*"
-          - "org.xmlunit:*"
-      google:
+          - "junit:junit"
+          - "org.xmlunit:xmlunit-legacy"
+      google-guava:
         patterns:
-          - "com.google.guava:*"
-          - "com.android.tools:*"
+          - "com.google.guava:guava"
       gradle-plugins:
         patterns:
-          - "com.vanniktech.*:*"
-      other-dependencies:
+          - "com.vanniktech.maven.publish:*"
+      xml:
         patterns:
-          - "xmlpull:*"
+          - "xmlpull:xmlpull"
