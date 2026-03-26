@@ -268,29 +268,9 @@ public class ApkBuilder {
             return;
         }
 
-        // Back up manifest for editing.
-        File manifestOrig = new File(manifest.getPath() + ".orig");
-        try {
-            OS.cpfile(manifest, manifestOrig);
-        } catch (BrutException ex) {
-            throw new AndrolibException(ex);
-        }
+        File manifestOrig = backupAndPrepareManifest(manifest);
 
-        ResXmlUtils.fixingPublicAttrsInProviderAttributes(manifest);
-
-        if (mConfig.isDebuggable()) {
-            Log.i(TAG, "Setting 'debuggable' attribute to 'true' in AndroidManifest.xml...");
-            ResXmlUtils.setApplicationDebugTagTrue(manifest);
-        }
-
-        File tmpFile;
-        try {
-            tmpFile = File.createTempFile("APKTOOL", null);
-            OS.rmfile(tmpFile);
-        } catch (IOException ex) {
-            throw new AndrolibException(ex);
-        }
-
+        File tmpFile = createTempFile();
         Log.i(TAG, "Building AndroidManifest.xml with " + AaptManager.getBinaryName() + "...");
         mAaptInvoker.invoke(tmpFile, manifest, null);
 
@@ -302,12 +282,7 @@ public class ApkBuilder {
             OS.rmfile(tmpFile);
         }
 
-        // Restore original manifest.
-        try {
-            OS.mvfile(manifestOrig, manifest);
-        } catch (BrutException ex) {
-            throw new AndrolibException(ex);
-        }
+        restoreManifest(manifest, manifestOrig);
     }
 
     private void buildResourcesFully(File outDir, File manifest, File resDir) throws AndrolibException {
@@ -317,20 +292,7 @@ public class ApkBuilder {
             return;
         }
 
-        // Back up manifest for editing.
-        File manifestOrig = new File(manifest.getPath() + ".orig");
-        try {
-            OS.cpfile(manifest, manifestOrig);
-        } catch (BrutException ex) {
-            throw new AndrolibException(ex);
-        }
-
-        ResXmlUtils.fixingPublicAttrsInProviderAttributes(manifest);
-
-        if (mConfig.isDebuggable()) {
-            Log.i(TAG, "Setting 'debuggable' attribute to 'true' in AndroidManifest.xml...");
-            ResXmlUtils.setApplicationDebugTagTrue(manifest);
-        }
+        File manifestOrig = backupAndPrepareManifest(manifest);
 
         if (mConfig.isNetSecConf()) {
             Log.i(TAG, "Adding permissive network security config in manifest...");
@@ -345,14 +307,7 @@ public class ApkBuilder {
             }
         }
 
-        File tmpFile;
-        try {
-            tmpFile = File.createTempFile("APKTOOL", null);
-            OS.rmfile(tmpFile);
-        } catch (IOException ex) {
-            throw new AndrolibException(ex);
-        }
-
+        File tmpFile = createTempFile();
         Log.i(TAG, "Building resources with " + AaptManager.getBinaryName() + "...");
         mAaptInvoker.invoke(tmpFile, manifest, resDir);
 
@@ -364,7 +319,38 @@ public class ApkBuilder {
             OS.rmfile(tmpFile);
         }
 
-        // Restore original manifest.
+        restoreManifest(manifest, manifestOrig);
+    }
+
+    private File backupAndPrepareManifest(File manifest) throws AndrolibException {
+        File manifestOrig = new File(manifest.getPath() + ".orig");
+        try {
+            OS.cpfile(manifest, manifestOrig);
+        } catch (BrutException ex) {
+            throw new AndrolibException(ex);
+        }
+
+        ResXmlUtils.fixingPublicAttrsInProviderAttributes(manifest);
+
+        if (mConfig.isDebuggable()) {
+            Log.i(TAG, "Setting 'debuggable' attribute to 'true' in AndroidManifest.xml...");
+            ResXmlUtils.setApplicationDebugTagTrue(manifest);
+        }
+
+        return manifestOrig;
+    }
+
+    private File createTempFile() throws AndrolibException {
+        try {
+            File tmpFile = File.createTempFile("APKTOOL", null);
+            OS.rmfile(tmpFile);
+            return tmpFile;
+        } catch (IOException ex) {
+            throw new AndrolibException(ex);
+        }
+    }
+
+    private void restoreManifest(File manifest, File manifestOrig) throws AndrolibException {
         try {
             OS.mvfile(manifestOrig, manifest);
         } catch (BrutException ex) {
