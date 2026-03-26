@@ -268,46 +268,8 @@ public class ApkBuilder {
             return;
         }
 
-        // Back up manifest for editing.
-        File manifestOrig = new File(manifest.getPath() + ".orig");
-        try {
-            OS.cpfile(manifest, manifestOrig);
-        } catch (BrutException ex) {
-            throw new AndrolibException(ex);
-        }
-
-        ResXmlUtils.fixingPublicAttrsInProviderAttributes(manifest);
-
-        if (mConfig.isDebuggable()) {
-            Log.i(TAG, "Setting 'debuggable' attribute to 'true' in AndroidManifest.xml...");
-            ResXmlUtils.setApplicationDebugTagTrue(manifest);
-        }
-
-        File tmpFile;
-        try {
-            tmpFile = File.createTempFile("APKTOOL", null);
-            OS.rmfile(tmpFile);
-        } catch (IOException ex) {
-            throw new AndrolibException(ex);
-        }
-
         Log.i(TAG, "Building AndroidManifest.xml with " + AaptManager.getBinaryName() + "...");
-        mAaptInvoker.invoke(tmpFile, manifest, null);
-
-        try (ZipRODirectory tmpDir = new ZipRODirectory(tmpFile)) {
-            tmpDir.copyToDir(outDir, "AndroidManifest.xml");
-        } catch (DirectoryException ex) {
-            throw new AndrolibException(ex);
-        } finally {
-            OS.rmfile(tmpFile);
-        }
-
-        // Restore original manifest.
-        try {
-            OS.mvfile(manifestOrig, manifest);
-        } catch (BrutException ex) {
-            throw new AndrolibException(ex);
-        }
+        buildWithManifestBackup(outDir, manifest, null);
     }
 
     private void buildResourcesFully(File outDir, File manifest, File resDir) throws AndrolibException {
@@ -317,7 +279,15 @@ public class ApkBuilder {
             return;
         }
 
-        // Back up manifest for editing.
+        if (mConfig.isNetSecConf()) {
+            applyNetworkSecurityConfig(manifest);
+        }
+
+        Log.i(TAG, "Building resources with " + AaptManager.getBinaryName() + "...");
+        buildWithManifestBackup(outDir, manifest, resDir);
+    }
+
+    private void buildWithManifestBackup(File outDir, File manifest, File resDir) throws AndrolibException {
         File manifestOrig = new File(manifest.getPath() + ".orig");
         try {
             OS.cpfile(manifest, manifestOrig);
@@ -325,26 +295,42 @@ public class ApkBuilder {
             throw new AndrolibException(ex);
         }
 
+        try {
+            prepareManifest(manifest);
+            invokeAaptAndCopy(outDir, manifest, resDir);
+        } finally {
+            // Restore original manifest.
+            try {
+                OS.mvfile(manifestOrig, manifest);
+            } catch (BrutException ex) {
+                throw new AndrolibException(ex);
+            }
+        }
+    }
+
+    private void prepareManifest(File manifest) throws AndrolibException {
         ResXmlUtils.fixingPublicAttrsInProviderAttributes(manifest);
 
         if (mConfig.isDebuggable()) {
             Log.i(TAG, "Setting 'debuggable' attribute to 'true' in AndroidManifest.xml...");
             ResXmlUtils.setApplicationDebugTagTrue(manifest);
         }
+    }
 
-        if (mConfig.isNetSecConf()) {
-            Log.i(TAG, "Adding permissive network security config in manifest...");
-            File netSecConfOrig = new File(mApkDir, "res/xml/network_security_config.xml");
-            OS.mkdir(netSecConfOrig.getParentFile());
-            ResXmlUtils.modNetworkSecurityConfig(netSecConfOrig);
-            ResXmlUtils.setNetworkSecurityConfig(manifest);
+    private void applyNetworkSecurityConfig(File manifest) throws AndrolibException {
+        Log.i(TAG, "Adding permissive network security config in manifest...");
+        File netSecConfOrig = new File(mApkDir, "res/xml/network_security_config.xml");
+        OS.mkdir(netSecConfOrig.getParentFile());
+        ResXmlUtils.modNetworkSecurityConfig(netSecConfOrig);
+        ResXmlUtils.setNetworkSecurityConfig(manifest);
 
-            String targetSdkVersion = mApkInfo.getSdkInfo().getTargetSdkVersion();
-            if (targetSdkVersion != null && SdkInfo.parseSdkInt(targetSdkVersion) < ResConfig.SDK_NOUGAT) {
-                Log.w(TAG, "Target SDK version is lower than 24, Network Security Configuration might be ignored!");
-            }
+        String targetSdkVersion = mApkInfo.getSdkInfo().getTargetSdkVersion();
+        if (targetSdkVersion != null && SdkInfo.parseSdkInt(targetSdkVersion) < ResConfig.SDK_NOUGAT) {
+            Log.w(TAG, "Target SDK version is lower than 24, Network Security Configuration might be ignored!");
         }
+    }
 
+    private void invokeAaptAndCopy(File outDir, File manifest, File resDir) throws AndrolibException {
         File tmpFile;
         try {
             tmpFile = File.createTempFile("APKTOOL", null);
@@ -353,22 +339,18 @@ public class ApkBuilder {
             throw new AndrolibException(ex);
         }
 
-        Log.i(TAG, "Building resources with " + AaptManager.getBinaryName() + "...");
         mAaptInvoker.invoke(tmpFile, manifest, resDir);
 
         try (ZipRODirectory tmpDir = new ZipRODirectory(tmpFile)) {
-            tmpDir.copyToDir(outDir, "AndroidManifest.xml", "resources.arsc", "res");
+            if (resDir != null) {
+                tmpDir.copyToDir(outDir, "AndroidManifest.xml", "resources.arsc", "res");
+            } else {
+                tmpDir.copyToDir(outDir, "AndroidManifest.xml");
+            }
         } catch (DirectoryException ex) {
             throw new AndrolibException(ex);
         } finally {
             OS.rmfile(tmpFile);
-        }
-
-        // Restore original manifest.
-        try {
-            OS.mvfile(manifestOrig, manifest);
-        } catch (BrutException ex) {
-            throw new AndrolibException(ex);
         }
     }
 

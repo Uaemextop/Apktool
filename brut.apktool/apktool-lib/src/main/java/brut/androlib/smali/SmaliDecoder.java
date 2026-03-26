@@ -34,6 +34,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class SmaliDecoder {
+    private static final int MAX_BAKSMALI_JOBS = 6;
+
     private final ZipDexContainer mDexContainer;
     private final boolean mDebugMode;
     private final Set<String> mDexFiles;
@@ -62,39 +64,8 @@ public class SmaliDecoder {
 
     public void decode(String dexName, File outDir) throws AndrolibException {
         try {
-            // Fetch the requested dex file from the dex container.
-            ZipDexContainer.DexEntry<DexBackedDexFile> dexEntry = mDexContainer.getEntry(dexName);
-            if (dexEntry == null) {
-                throw new AndrolibException("Could not find file: " + dexName);
-            }
+            Map<Integer, DexBackedDexFile> dexFiles = collectDexFiles(dexName);
 
-            // Add the requested dex file.
-            Map<Integer, DexBackedDexFile> dexFiles = new TreeMap<>();
-            dexFiles.put(1, dexEntry.getDexFile());
-
-            // Add additional dex files if it's a multi-dex container.
-            for (String dexEntryName : mDexContainer.getDexEntryNames()) {
-                if (dexEntryName.equals(dexName)) {
-                    continue;
-                }
-
-                String prefix = dexName + "/";
-                if (!dexEntryName.startsWith(prefix)) {
-                    continue;
-                }
-
-                int dexNum;
-                try {
-                    dexNum = Integer.parseInt(dexEntryName.substring(prefix.length()));
-                } catch (NumberFormatException ignored) {
-                    continue;
-                }
-                if (dexNum > 1) {
-                    dexFiles.put(dexNum, mDexContainer.getEntry(dexEntryName).getDexFile());
-                }
-            }
-
-            // Decode the dex files into separate folders.
             for (Map.Entry<Integer, DexBackedDexFile> entry : dexFiles.entrySet()) {
                 int dexNum = entry.getKey();
                 DexBackedDexFile dexFile = entry.getValue();
@@ -103,14 +74,7 @@ public class SmaliDecoder {
                     throw new AndrolibException("Cannot disassemble an odex file without deodexing it: " + dexName);
                 }
 
-                String dirName = "smali";
-                if (dexNum > 1 || !dexName.equals("classes.dex")) {
-                    dirName += "_" + dexName.substring(0, dexName.lastIndexOf('.')).replace('/', '@');
-                    if (dexNum > 1) {
-                        dirName += dexNum;
-                    }
-                }
-
+                String dirName = resolveSmaliDirName(dexName, dexNum);
                 decodeFile(dexFile, new File(outDir, dirName));
             }
 
@@ -120,9 +84,66 @@ public class SmaliDecoder {
         }
     }
 
-    private void decodeFile(DexBackedDexFile dexFile, File smaliDir) {
-        int jobs = Math.min(Runtime.getRuntime().availableProcessors(), 6);
+    private Map<Integer, DexBackedDexFile> collectDexFiles(String dexName) throws IOException, AndrolibException {
+        ZipDexContainer.DexEntry<DexBackedDexFile> dexEntry = mDexContainer.getEntry(dexName);
+        if (dexEntry == null) {
+            throw new AndrolibException("Could not find file: " + dexName);
+        }
 
+        Map<Integer, DexBackedDexFile> dexFiles = new TreeMap<>();
+        dexFiles.put(1, dexEntry.getDexFile());
+
+        collectMultiDexFiles(dexName, dexFiles);
+
+        return dexFiles;
+    }
+
+    private void collectMultiDexFiles(String dexName, Map<Integer, DexBackedDexFile> dexFiles) throws IOException {
+        String prefix = dexName + "/";
+
+        for (String dexEntryName : mDexContainer.getDexEntryNames()) {
+            if (dexEntryName.equals(dexName) || !dexEntryName.startsWith(prefix)) {
+                continue;
+            }
+
+            int dexNum = parseDexNum(dexEntryName.substring(prefix.length()));
+            if (dexNum > 1) {
+                dexFiles.put(dexNum, mDexContainer.getEntry(dexEntryName).getDexFile());
+            }
+        }
+    }
+
+    private int parseDexNum(String numStr) {
+        try {
+            return Integer.parseInt(numStr);
+        } catch (NumberFormatException ignored) {
+            return -1;
+        }
+    }
+
+    static String resolveSmaliDirName(String dexName, int dexNum) {
+        String dirName = "smali";
+        if (dexNum > 1 || !dexName.equals("classes.dex")) {
+            dirName += "_" + dexName.substring(0, dexName.lastIndexOf('.')).replace('/', '@');
+            if (dexNum > 1) {
+                dirName += dexNum;
+            }
+        }
+        return dirName;
+    }
+
+    private void decodeFile(DexBackedDexFile dexFile, File smaliDir) {
+        int jobs = Math.min(Runtime.getRuntime().availableProcessors(), MAX_BAKSMALI_JOBS);
+
+        BaksmaliOptions options = createBaksmaliOptions(dexFile);
+
+        OS.mkdir(smaliDir);
+        Baksmali.disassembleDexFile(dexFile, smaliDir, jobs, options);
+
+        updateInferredApiLevel(dexFile);
+    }
+
+    private BaksmaliOptions createBaksmaliOptions(DexBackedDexFile dexFile) {
         BaksmaliOptions options = new BaksmaliOptions();
         options.parameterRegisters = true;
         options.localsDirective = true;
@@ -141,9 +162,10 @@ public class SmaliDecoder {
                 ((DexBackedOdexFile) dexFile).getOdexVersion());
         }
 
-        OS.mkdir(smaliDir);
-        Baksmali.disassembleDexFile(dexFile, smaliDir, jobs, options);
+        return options;
+    }
 
+    private void updateInferredApiLevel(DexBackedDexFile dexFile) {
         int apiLevel = dexFile.getOpcodes().api;
         mInferredApiLevel.updateAndGet(cur -> (cur == 0 || cur > apiLevel) ? apiLevel : cur);
     }
