@@ -41,23 +41,25 @@ jobs:
     runs-on: ubuntu-latest
     name: Recompile decompiled APK
     steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
       - uses: actions/setup-java@v5
         with:
           distribution: 'zulu'
           java-version: 17
 
-      - uses: gradle/actions/setup-gradle@v5.0.2
-
-      - name: Build apktool
+      - name: Download apktool from latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          ./gradlew build shadowJar proguard
-          JAR_PATH=$(find brut.apktool/apktool-cli/build/libs -name "apktool-*.jar" \
-            ! -name "*-all.jar" ! -name "*-sources.jar" ! -name "*-javadoc.jar" | head -1)
+          mkdir -p /tmp/apktool-download
+          gh release download --repo "${{ github.repository }}" \
+            --pattern "apktool-*.jar" --dir /tmp/apktool-download
+          JAR_PATH=$(find /tmp/apktool-download -name "apktool-*.jar" | head -1)
+          if [ -z "$JAR_PATH" ]; then
+            echo "::error::Failed to download apktool JAR from latest release"
+            exit 1
+          fi
           echo "APKTOOL_JAR=$JAR_PATH" >> "$GITHUB_ENV"
+          echo "Downloaded apktool: $JAR_PATH"
 
       - name: Download Android 16 framework (API 36)
         run: |
