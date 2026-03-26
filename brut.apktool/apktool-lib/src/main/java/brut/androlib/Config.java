@@ -50,6 +50,12 @@ public class Config {
     private boolean mNetSecConf;
     private String mAaptBinary;
 
+    // Optimize options, only supported by aapt2.
+    // see https://developer.android.com/tools/aapt2#optimize_options
+    private boolean mShortenResPaths;
+    private boolean mEnableSparseEncoding;
+    private boolean mCollapseResNames;
+
     public Config(String version) {
         mVersion = version;
 
@@ -78,6 +84,10 @@ public class Config {
         mDebuggable = false;
         mNetSecConf = false;
         mAaptBinary = null;
+
+        mShortenResPaths = false;
+        mEnableSparseEncoding = false;
+        mCollapseResNames = false;
     }
 
     public String getVersion() {
@@ -268,5 +278,32 @@ public class Config {
 
     public void setAaptBinary(String aaptBinary) {
         mAaptBinary = aaptBinary;
+    }
+
+    // Optimize options, only supported by aapt2.
+    // see https://developer.android.com/tools/aapt2#optimize_options
+
+    public boolean isShortenResPaths() {
+        return mShortenResPaths;
+    }
+
+    public void setShortenResPaths(boolean shortenResPaths) {
+        mShortenResPaths = shortenResPaths;
+    }
+
+    public boolean isEnableSparseEncoding() {
+        return mEnableSparseEncoding;
+    }
+
+    public void setEnableSparseEncoding(boolean enableSparseEncoding) {
+        mEnableSparseEncoding = enableSparseEncoding;
+    }
+
+    public boolean isCollapseResNames() {
+        return mCollapseResNames;
+    }
+
+    public void setCollapseResNames(boolean collapseResNames) {
+        mCollapseResNames = collapseResNames;
     }
 }
