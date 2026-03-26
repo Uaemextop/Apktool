@@ -149,25 +149,10 @@ jobs:
         run: |
           OUTPUT_DIR="/tmp/recompiled-output"
           mkdir -p "$OUTPUT_DIR"
-          CLASSES_DIR="/tmp/compiled-classes"
-          mkdir -p "$CLASSES_DIR"
 
-          # Find all Java source files
-          find "${{ env.DECOMPILED_DIR }}" -name "*.java" -type f > /tmp/sources.txt
-          if [ ! -s /tmp/sources.txt ]; then
-            echo "::error::No .java source files found in decompiled repository"
-            exit 1
-          fi
-
-          echo "Compiling Java sources..."
-          javac -d "$CLASSES_DIR" -sourcepath "${{ env.DECOMPILED_DIR }}" \
-            @/tmp/sources.txt 2>&1 || {
-              echo "::warning::Some files failed to compile, packaging available classes"
-            }
-
-          echo "Packaging into JAR..."
-          cd "$CLASSES_DIR"
-          jar cf "$OUTPUT_DIR/${{ env.REPO_NAME }}.jar" .
+          echo "Recompiling JAR with apktool..."
+          java -jar "${{ env.APKTOOL_JAR }}" b "${{ env.DECOMPILED_DIR }}" \
+            -o "$OUTPUT_DIR/${{ env.REPO_NAME }}.jar"
 
           echo "OUTPUT_DIR=$OUTPUT_DIR" >> "$GITHUB_ENV"
           echo "JAR recompilation complete."
