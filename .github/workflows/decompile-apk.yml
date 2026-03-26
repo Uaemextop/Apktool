@@ -218,8 +218,15 @@ jobs:
       - name: Decompile JAR
         if: env.FILE_TYPE == 'jar'
         run: |
-          # Download CFR decompiler
-          CFR_URL="https://github.com/leibnitz27/cfr/releases/latest/download/cfr.jar"
+          # Download CFR decompiler (resolve actual asset name via GitHub API)
+          CFR_URL=$(curl -s https://api.github.com/repos/leibnitz27/cfr/releases/latest \
+            | jq -r '.assets[].browser_download_url' \
+            | grep -E '/cfr-[0-9.]+\.jar$' | head -n 1)
+          if [ -z "$CFR_URL" ]; then
+            echo "::error::Failed to resolve CFR decompiler download URL"
+            exit 1
+          fi
+          echo "Downloading CFR from: $CFR_URL"
           wget -q "$CFR_URL" -O /tmp/cfr.jar \
             || curl -fSL -o /tmp/cfr.jar "$CFR_URL"
 
