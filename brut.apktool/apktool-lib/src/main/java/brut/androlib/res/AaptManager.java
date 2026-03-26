@@ -18,6 +18,7 @@ package brut.androlib.res;
 
 import brut.androlib.exceptions.AndrolibException;
 import brut.common.BrutException;
+import brut.common.Log;
 import brut.util.Jar;
 import brut.util.OS;
 import brut.util.OSDetection;
@@ -25,6 +26,7 @@ import brut.util.OSDetection;
 import java.io.File;
 
 public final class AaptManager {
+    private static final String TAG = AaptManager.class.getName();
 
     private AaptManager() {
         // Private constructor for utility class.
@@ -50,8 +52,8 @@ public final class AaptManager {
         if (use64) {
             try {
                 return resolveBinaryFile(getBinary64Name());
-            } catch (AndrolibException ignored) {
-                // Fall back to standard aapt2
+            } catch (AndrolibException ex) {
+                Log.d(TAG, getBinary64Name() + " not available: " + ex.getMessage() + " (falling back to " + getBinaryName() + ")");
             }
         }
         return resolveBinaryFile(getBinaryName());
