@@ -1,10 +1,10 @@
-name: Decompile APK
+name: Decompile APK/JAR
 
 on:
   workflow_dispatch:
     inputs:
       apk_url:
-        description: 'Direct download URL of the APK/APKM/APKS/XAPK file'
+        description: 'Direct download URL of the APK/APKM/APKS/XAPK/JAR file'
         required: true
         type: string
       repo_owner:
@@ -12,42 +12,42 @@ on:
         required: true
         type: string
       repo_name:
-        description: 'Repository name override (leave empty to auto-generate from APK package name)'
+        description: 'Repository name override (leave empty to auto-generate from package name)'
         required: false
         default: ''
         type: string
       no_src:
-        description: 'Do not decode sources (--no-src / -s)'
+        description: 'Do not decode sources (--no-src / -s) [APK only]'
         required: false
         default: false
         type: boolean
       no_res:
-        description: 'Do not decode resources (--no-res / -r)'
+        description: 'Do not decode resources (--no-res / -r) [APK only]'
         required: false
         default: false
         type: boolean
       force:
-        description: 'Force delete destination directory (--force / -f)'
+        description: 'Force delete destination directory (--force / -f) [APK only]'
         required: false
         default: true
         type: boolean
       no_debug_info:
-        description: 'Do not write out debug info (--no-debug-info)'
+        description: 'Do not write out debug info (--no-debug-info) [APK only]'
         required: false
         default: false
         type: boolean
       keep_broken_res:
-        description: 'Keep broken resources (--keep-broken-res)'
+        description: 'Keep broken resources (--keep-broken-res) [APK only]'
         required: false
         default: false
         type: boolean
       only_main_classes:
-        description: 'Only disassemble dex classes in root (--only-main-classes)'
+        description: 'Only disassemble dex classes in root (--only-main-classes) [APK only]'
         required: false
         default: false
         type: boolean
       extra_args:
-        description: 'Additional apktool decode arguments (space-separated)'
+        description: 'Additional apktool decode arguments (space-separated) [APK only]'
         required: false
         default: ''
         type: string
@@ -58,7 +58,7 @@ permissions:
 jobs:
   decompile:
     runs-on: ubuntu-latest
-    name: Decompile APK and push to repository
+    name: Decompile APK/JAR and push to repository
     steps:
       - uses: actions/setup-java@v5
         with:
@@ -80,7 +80,38 @@ jobs:
           echo "APKTOOL_JAR=$JAR_PATH" >> "$GITHUB_ENV"
           echo "Downloaded apktool: $JAR_PATH"
 
+      - name: Download file
+        run: |
+          sudo apt-get update && sudo apt-get install -y wget unzip
+          mkdir -p /tmp/apk-download
+          FILE_URL="${{ inputs.apk_url }}"
+          FILENAME=$(basename "$FILE_URL" | sed 's/?.*//')
+          # If no extension, default to .apk
+          if [[ "$FILENAME" != *.* ]]; then
+            FILENAME="${FILENAME}.apk"
+          fi
+          wget -q --content-disposition -O "/tmp/apk-download/$FILENAME" "$FILE_URL" \
+            || curl -fSL -o "/tmp/apk-download/$FILENAME" "$FILE_URL"
+          echo "DOWNLOADED_FILE=/tmp/apk-download/$FILENAME" >> "$GITHUB_ENV"
+          echo "Downloaded: $FILENAME"
+          ls -la /tmp/apk-download/
+
+      - name: Detect file type
+        run: |
+          FILE="${{ env.DOWNLOADED_FILE }}"
+          EXT="${FILE##*.}"
+          EXT_LOWER=$(echo "$EXT" | tr '[:upper:]' '[:lower:]')
+
+          if [[ "$EXT_LOWER" == "jar" ]]; then
+            echo "FILE_TYPE=jar" >> "$GITHUB_ENV"
+            echo "Detected JAR file"
+          else
+            echo "FILE_TYPE=apk" >> "$GITHUB_ENV"
+            echo "Detected APK file (extension: .$EXT_LOWER)"
+          fi
+
       - name: Download Android 16 framework (API 36)
+        if: env.FILE_TYPE == 'apk'
         run: |
           sudo apt-get update && sudo apt-get install -y wget unzip
           mkdir -p /tmp/android-sdk
@@ -98,28 +129,15 @@ jobs:
           ls -la "$FRAMEWORK_PATH"
 
       - name: Install framework into apktool
+        if: env.FILE_TYPE == 'apk'
         run: |
           ANDROID_HOME=/tmp/android-sdk
           FRAMEWORK_PATH="$ANDROID_HOME/platforms/android-36/android.jar"
           java -jar "${{ env.APKTOOL_JAR }}" install-framework "$FRAMEWORK_PATH"
           echo "Android 16 framework installed successfully."
 
-      - name: Download APK file
-        run: |
-          mkdir -p /tmp/apk-download
-          FILE_URL="${{ inputs.apk_url }}"
-          FILENAME=$(basename "$FILE_URL" | sed 's/?.*//')
-          # If no extension, default to .apk
-          if [[ "$FILENAME" != *.* ]]; then
-            FILENAME="${FILENAME}.apk"
-          fi
-          wget -q --content-disposition -O "/tmp/apk-download/$FILENAME" "$FILE_URL" \
-            || curl -fSL -o "/tmp/apk-download/$FILENAME" "$FILE_URL"
-          echo "DOWNLOADED_FILE=/tmp/apk-download/$FILENAME" >> "$GITHUB_ENV"
-          echo "Downloaded: $FILENAME"
-          ls -la /tmp/apk-download/
-
       - name: Convert split APKs to single APK (if needed)
+        if: env.FILE_TYPE == 'apk'
         run: |
           FILE="${{ env.DOWNLOADED_FILE }}"
           EXT="${FILE##*.}"
@@ -159,6 +177,7 @@ jobs:
           echo "Converted APK ready at: $OUTPUT_APK"
 
       - name: Decompile APK
+        if: env.FILE_TYPE == 'apk'
         run: |
           DECODE_ARGS="d"
 
@@ -196,14 +215,39 @@ jobs:
           echo "Decompilation complete."
           ls -la "$OUTPUT_DIR"
 
-      - name: Generate repository name from APK
+      - name: Decompile JAR
+        if: env.FILE_TYPE == 'jar'
+        run: |
+          # Download CFR decompiler
+          CFR_URL="https://github.com/leibnitz27/cfr/releases/latest/download/cfr.jar"
+          wget -q "$CFR_URL" -O /tmp/cfr.jar \
+            || curl -fSL -o /tmp/cfr.jar "$CFR_URL"
+
+          OUTPUT_DIR="/tmp/decompiled-jar"
+          mkdir -p "$OUTPUT_DIR"
+
+          echo "Decompiling JAR with CFR..."
+          java -jar /tmp/cfr.jar "${{ env.DOWNLOADED_FILE }}" --outputdir "$OUTPUT_DIR"
+
+          echo "DECOMPILED_DIR=$OUTPUT_DIR" >> "$GITHUB_ENV"
+          echo "JAR decompilation complete."
+          ls -la "$OUTPUT_DIR"
+
+      - name: Generate repository name
         run: |
           DECOMPILED_DIR="${{ env.DECOMPILED_DIR }}"
-          MANIFEST="$DECOMPILED_DIR/AndroidManifest.xml"
+          FILE_TYPE="${{ env.FILE_TYPE }}"
 
           PACKAGE_NAME=""
-          if [ -f "$MANIFEST" ]; then
-            PACKAGE_NAME=$(sed -n 's/.*package="\([^"]*\)".*/\1/p' "$MANIFEST" | head -1)
+          if [ "$FILE_TYPE" = "apk" ]; then
+            MANIFEST="$DECOMPILED_DIR/AndroidManifest.xml"
+            if [ -f "$MANIFEST" ]; then
+              PACKAGE_NAME=$(sed -n 's/.*package="\([^"]*\)".*/\1/p' "$MANIFEST" | head -1)
+            fi
+          else
+            # For JAR files, derive name from the downloaded file
+            BASENAME=$(basename "${{ env.DOWNLOADED_FILE }}" .jar)
+            PACKAGE_NAME="$BASENAME"
           fi
 
           USER_NAME="${{ inputs.repo_name }}"
@@ -214,7 +258,7 @@ jobs:
             REPO_NAME=$(echo "$PACKAGE_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9._-]/-/g' | tr '.' '-')
             echo "Auto-generated repository name from package: $REPO_NAME"
           else
-            REPO_NAME="decompiled-apk-$(date +%Y%m%d%H%M%S)"
+            REPO_NAME="decompiled-${FILE_TYPE}-$(date +%Y%m%d%H%M%S)"
             echo "Could not extract package name, using fallback: $REPO_NAME"
           fi
 
@@ -247,7 +291,7 @@ jobs:
 
           # Create the new repository (try with owner prefix first, fallback to short name)
           gh repo create "$REPO_OWNER/$FINAL_NAME" --public \
-            --description "Decompiled APK: $BASE_NAME"
+            --description "Decompiled ${{ env.FILE_TYPE }}: $BASE_NAME"
 
           # Push decompiled content
           cd "${{ env.DECOMPILED_DIR }}"
@@ -270,7 +314,7 @@ jobs:
           fi
 
           git add -A
-          git commit -m "Decompiled APK content from: $BASE_NAME"
+          git commit -m "Decompiled ${{ env.FILE_TYPE }} content from: $BASE_NAME"
           git branch -M main
           git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${REPO_OWNER}/${FINAL_NAME}.git"
           git push -u origin main
