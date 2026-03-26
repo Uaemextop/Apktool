@@ -218,23 +218,41 @@ jobs:
       - name: Decompile JAR
         if: env.FILE_TYPE == 'jar'
         run: |
-          # Download CFR decompiler (resolve actual asset name via GitHub API)
-          CFR_URL=$(curl -s https://api.github.com/repos/leibnitz27/cfr/releases/latest \
-            | jq -r '.assets[].browser_download_url' \
-            | grep -E '/cfr-[0-9.]+\.jar$' | head -n 1)
-          if [ -z "$CFR_URL" ]; then
-            echo "::error::Failed to resolve CFR decompiler download URL"
-            exit 1
-          fi
-          echo "Downloading CFR from: $CFR_URL"
-          wget -q "$CFR_URL" -O /tmp/cfr.jar \
-            || curl -fSL -o /tmp/cfr.jar "$CFR_URL"
-
+          FILE="${{ env.DOWNLOADED_FILE }}"
           OUTPUT_DIR="/tmp/decompiled-jar"
           mkdir -p "$OUTPUT_DIR"
 
-          echo "Decompiling JAR with CFR..."
-          java -jar /tmp/cfr.jar "${{ env.DOWNLOADED_FILE }}" --outputdir "$OUTPUT_DIR"
+          # Check if JAR contains DEX bytecode (e.g. Android framework.jar)
+          if unzip -l "$FILE" | grep -qE '\.dex$'; then
+            echo "JAR contains DEX bytecode — using Apktool to decode..."
+            java -jar "${{ env.APKTOOL_JAR }}" d -f -o "$OUTPUT_DIR" "$FILE"
+          else
+            # Standard Java JAR — decompile with CFR
+            CFR_URL=$(curl -s https://api.github.com/repos/leibnitz27/cfr/releases/latest \
+              | jq -r '.assets[].browser_download_url' \
+              | grep -E '/cfr-[0-9.]+\.jar$' | head -n 1)
+            if [ -z "$CFR_URL" ]; then
+              echo "::error::Failed to resolve CFR decompiler download URL"
+              exit 1
+            fi
+            echo "Downloading CFR from: $CFR_URL"
+            wget -q "$CFR_URL" -O /tmp/cfr.jar \
+              || curl -fSL -o /tmp/cfr.jar "$CFR_URL"
+
+            echo "Decompiling JAR with CFR..."
+            java -jar /tmp/cfr.jar "$FILE" --outputdir "$OUTPUT_DIR"
+
+            # Validate that CFR produced actual Java source files
+            JAVA_COUNT=$(find "$OUTPUT_DIR" -name "*.java" -type f | wc -l)
+            if [ "$JAVA_COUNT" -eq 0 ]; then
+              echo "::warning::CFR produced no Java source files — falling back to Apktool..."
+              rm -rf "$OUTPUT_DIR"
+              mkdir -p "$OUTPUT_DIR"
+              java -jar "${{ env.APKTOOL_JAR }}" d -f -o "$OUTPUT_DIR" "$FILE"
+            else
+              echo "CFR successfully decompiled $JAVA_COUNT Java source files."
+            fi
+          fi
 
           echo "DECOMPILED_DIR=$OUTPUT_DIR" >> "$GITHUB_ENV"
           echo "JAR decompilation complete."
