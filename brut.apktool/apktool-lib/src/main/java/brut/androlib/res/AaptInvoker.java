@@ -45,10 +45,25 @@ public class AaptInvoker {
     }
 
     public void invoke(File outApk, File manifest, File resDir) throws AndrolibException {
-        SdkInfo sdkInfo = mApkInfo.getSdkInfo();
-        VersionInfo versionInfo = mApkInfo.getVersionInfo();
-        ResourcesInfo resourcesInfo = mApkInfo.getResourcesInfo();
+        String aaptPath = resolveAaptPath();
 
+        File resZip = null;
+        if (resDir != null) {
+            resZip = compileResources(aaptPath, resDir);
+        }
+
+        if (manifest == null) {
+            return;
+        }
+
+        linkResources(aaptPath, outApk, manifest, resZip);
+
+        if (needsOptimization()) {
+            optimizeApk(aaptPath, outApk);
+        }
+    }
+
+    private String resolveAaptPath() throws AndrolibException {
         String aaptPath = mConfig.getAaptBinary();
         if (aaptPath == null || aaptPath.isEmpty()) {
             try {
@@ -58,50 +73,40 @@ public class AaptInvoker {
                 Log.w(TAG, aaptPath + ": " + ex.getMessage() + " (defaulting to $PATH binary)");
             }
         }
+        return aaptPath;
+    }
+
+    private File compileResources(String aaptPath, File resDir) throws AndrolibException {
+        File resZip = new File(resDir.getParent(), "build/resources.zip");
+        OS.rmfile(resZip);
 
         List<String> cmd = new ArrayList<>();
-        File resZip = null;
+        cmd.add(aaptPath);
+        cmd.add("compile");
 
-        if (resDir != null) {
-            resZip = new File(resDir.getParent(), "build/resources.zip");
-            OS.rmfile(resZip);
+        cmd.add("--dir");
+        cmd.add(resDir.getPath());
 
-            // Compile the files into flat arsc files.
-            cmd.add(aaptPath);
-            cmd.add("compile");
+        // Treats error that used to be valid in aapt1 as warnings in aapt2.
+        cmd.add("--legacy");
 
-            cmd.add("--dir");
-            cmd.add(resDir.getPath());
+        cmd.add("-o");
+        cmd.add(resZip.getPath());
 
-            // Treats error that used to be valid in aapt1 as warnings in aapt2.
-            cmd.add("--legacy");
-
-            cmd.add("-o");
-            cmd.add(resZip.getPath());
-
-            if (mConfig.isVerbose()) {
-                cmd.add("-v");
-            }
-
-            if (mConfig.isNoCrunch()) {
-                cmd.add("--no-crunch");
-            }
-
-            try {
-                OS.exec(cmd.toArray(new String[0]));
-                Log.d(TAG, "aapt2 compile command ran: " + cmd.toString());
-            } catch (BrutException ex) {
-                throw new AndrolibException(ex);
-            }
-
-            cmd.clear();
+        if (mConfig.isVerbose()) {
+            cmd.add("-v");
+        }
+        if (mConfig.isNoCrunch()) {
+            cmd.add("--no-crunch");
         }
 
-        if (manifest == null) {
-            return;
-        }
+        execAaptCommand(cmd, "compile");
+        return resZip;
+    }
 
-        // Link resources to the final apk.
+    private void linkResources(String aaptPath, File outApk, File manifest, File resZip)
+            throws AndrolibException {
+        List<String> cmd = new ArrayList<>();
         cmd.add(aaptPath);
         cmd.add("link");
 
@@ -111,6 +116,38 @@ public class AaptInvoker {
         cmd.add("--manifest");
         cmd.add(manifest.getPath());
 
+        addSdkVersionFlags(cmd);
+        addVersionInfoFlags(cmd);
+        addPackageFlags(cmd);
+        addFeatureFlagFlags(cmd);
+
+        // Disable automatic changes.
+        cmd.add("--no-auto-version");
+        cmd.add("--no-version-vectors");
+        cmd.add("--no-version-transitions");
+        cmd.add("--no-resource-deduping");
+        cmd.add("--no-resource-removal");
+        cmd.add("--no-compile-sdk-metadata");
+
+        // #3427 - Ignore stricter parsing during aapt2.
+        cmd.add("--warn-manifest-validation");
+
+        for (File includeFile : getIncludeFiles()) {
+            cmd.add("-I");
+            cmd.add(includeFile.getPath());
+        }
+        if (mConfig.isVerbose()) {
+            cmd.add("-v");
+        }
+        if (resZip != null) {
+            cmd.add(resZip.getPath());
+        }
+
+        execAaptCommand(cmd, "link");
+    }
+
+    private void addSdkVersionFlags(List<String> cmd) {
+        SdkInfo sdkInfo = mApkInfo.getSdkInfo();
         if (sdkInfo.getMinSdkVersion() != null) {
             cmd.add("--min-sdk-version");
             cmd.add(sdkInfo.getMinSdkVersion());
@@ -119,6 +156,10 @@ public class AaptInvoker {
             cmd.add("--target-sdk-version");
             cmd.add(sdkInfo.getTargetSdkVersion());
         }
+    }
+
+    private void addVersionInfoFlags(List<String> cmd) {
+        VersionInfo versionInfo = mApkInfo.getVersionInfo();
         if (versionInfo.getVersionCode() >= 0) {
             cmd.add("--version-code");
             cmd.add(Integer.toString(versionInfo.getVersionCode()));
@@ -127,6 +168,10 @@ public class AaptInvoker {
             cmd.add("--version-name");
             cmd.add(versionInfo.getVersionName());
         }
+    }
+
+    private void addPackageFlags(List<String> cmd) {
+        ResourcesInfo resourcesInfo = mApkInfo.getResourcesInfo();
         if (resourcesInfo.getPackageId() >= 0) {
             int pkgId = resourcesInfo.getPackageId();
             if (pkgId == 0) {
@@ -152,6 +197,9 @@ public class AaptInvoker {
         if (resourcesInfo.isKeepRawValues()) {
             cmd.add("--keep-raw-values");
         }
+    }
+
+    private void addFeatureFlagFlags(List<String> cmd) {
         if (!mApkInfo.getFeatureFlags().isEmpty()) {
             List<String> featureFlags = new ArrayList<>();
             for (Map.Entry<String, Boolean> entry : mApkInfo.getFeatureFlags().entrySet()) {
@@ -160,79 +208,61 @@ public class AaptInvoker {
             cmd.add("--feature-flags");
             cmd.add(String.join(",", featureFlags));
         }
+    }
 
-        // Disable automatic changes.
-        cmd.add("--no-auto-version");
-        cmd.add("--no-version-vectors");
-        cmd.add("--no-version-transitions");
-        cmd.add("--no-resource-deduping");
-        cmd.add("--no-resource-removal");
-        cmd.add("--no-compile-sdk-metadata");
+    private boolean needsOptimization() {
+        return mConfig.isShortenResPaths() || mConfig.isEnableSparseEncoding() || mConfig.isCollapseResNames();
+    }
 
-        // #3427 - Ignore stricter parsing during aapt2.
-        cmd.add("--warn-manifest-validation");
-
-        for (File includeFile : getIncludeFiles()) {
-            cmd.add("-I");
-            cmd.add(includeFile.getPath());
-        }
-        if (mConfig.isVerbose()) {
-            cmd.add("-v");
-        }
-        if (resZip != null) {
-            cmd.add(resZip.getPath());
+    private void optimizeApk(String aaptPath, File outApk) throws AndrolibException {
+        Path inputFilePath = new File(outApk.getParent(), outApk.getName() + ".tmp").toPath();
+        Path apkFilePath = outApk.toPath();
+        try {
+            Files.copy(apkFilePath, inputFilePath, StandardCopyOption.REPLACE_EXISTING);
+            Files.delete(apkFilePath);
+        } catch (IOException e) {
+            throw new AndrolibException(e);
         }
 
+        List<String> cmd = new ArrayList<>();
+        cmd.add(aaptPath);
+        cmd.add("optimize");
+
+        cmd.add("-o");
+        cmd.add(apkFilePath.toString());
+
+        if (mConfig.isShortenResPaths()) {
+            cmd.add("--shorten-resource-paths");
+        }
+        if (mConfig.isEnableSparseEncoding()) {
+            cmd.add("--enable-sparse-encoding");
+        }
+        if (mConfig.isCollapseResNames()) {
+            cmd.add("--collapse-resource-names");
+        }
+
+        cmd.add(inputFilePath.toString());
+
+        execAaptCommand(cmd, "optimize");
+    }
+
+    private void execAaptCommand(List<String> cmd, String phase) throws AndrolibException {
         try {
             OS.exec(cmd.toArray(new String[0]));
-            Log.d(TAG, "aapt2 link command ran: " + cmd.toString());
+            Log.d(TAG, "aapt2 " + phase + " command ran: " + cmd.toString());
         } catch (BrutException ex) {
             throw new AndrolibException(ex);
-        }
-
-        if (mConfig.isShortenResPaths() || mConfig.isEnableSparseEncoding() || mConfig.isCollapseResNames()) {
-            Path inputFilePath = new File(outApk.getParent(), outApk.getName() + ".tmp").toPath();
-            Path apkFilePath = outApk.toPath();
-            try {
-                Files.copy(apkFilePath, inputFilePath, StandardCopyOption.REPLACE_EXISTING);
-                Files.delete(apkFilePath);
-            } catch (IOException e) {
-                throw new AndrolibException(e);
-            }
-
-            cmd = new ArrayList<>();
-            cmd.add(aaptPath);
-            cmd.add("optimize");
-
-            cmd.add("-o");
-            cmd.add(apkFilePath.toString());
-
-            if (mConfig.isShortenResPaths()) {
-                cmd.add("--shorten-resource-paths");
-            }
-
-            if (mConfig.isEnableSparseEncoding()) {
-                cmd.add("--enable-sparse-encoding");
-            }
-
-            if (mConfig.isCollapseResNames()) {
-                cmd.add("--collapse-resource-names");
-            }
-
-            cmd.add(inputFilePath.toString());
-
-            try {
-                OS.exec(cmd.toArray(new String[0]));
-                Log.d(TAG, "aapt2 optimize command ran: " + cmd.toString());
-            } catch (BrutException ex) {
-                throw new AndrolibException(ex);
-            }
         }
     }
 
     private List<File> getIncludeFiles() throws AndrolibException {
         List<File> files = new ArrayList<>();
+        addFrameworkFiles(files);
+        addLibraryFiles(files);
+        return files;
+    }
 
+    private void addFrameworkFiles(List<File> files) throws AndrolibException {
         UsesFramework usesFramework = mApkInfo.getUsesFramework();
         List<Integer> frameworkIds = usesFramework.getIds();
         if (!frameworkIds.isEmpty()) {
@@ -242,29 +272,35 @@ public class AaptInvoker {
                 files.add(framework.getApkFile(id, tag));
             }
         }
+    }
 
+    private void addLibraryFiles(List<File> files) {
         List<String> usesLibrary = mApkInfo.getUsesLibrary();
-        if (!usesLibrary.isEmpty()) {
-            String[] libFiles = mConfig.getLibraryFiles();
-            for (String name : usesLibrary) {
-                File libFile = null;
-                if (libFiles != null) {
-                    for (String libEntry : libFiles) {
-                        String[] parts = libEntry.split(":", 2);
-                        if (parts.length == 2 && name.equals(parts[0])) {
-                            libFile = new File(parts[1]);
-                            break;
-                        }
-                    }
-                }
-                if (libFile != null) {
-                    files.add(libFile);
-                } else {
-                    Log.w(TAG, "Shared library was not provided: " + name);
-                }
-            }
+        if (usesLibrary.isEmpty()) {
+            return;
         }
 
-        return files;
+        String[] libFiles = mConfig.getLibraryFiles();
+        for (String name : usesLibrary) {
+            File libFile = resolveLibraryFile(name, libFiles);
+            if (libFile != null) {
+                files.add(libFile);
+            } else {
+                Log.w(TAG, "Shared library was not provided: " + name);
+            }
+        }
+    }
+
+    private File resolveLibraryFile(String name, String[] libFiles) {
+        if (libFiles == null) {
+            return null;
+        }
+        for (String libEntry : libFiles) {
+            String[] parts = libEntry.split(":", 2);
+            if (parts.length == 2 && name.equals(parts[0])) {
+                return new File(parts[1]);
+            }
+        }
+        return null;
     }
 }

@@ -45,55 +45,73 @@ public class SmaliBuilder {
     private static final boolean VERBOSE_ERRORS = false;
     private static final boolean PRINT_TOKENS = false;
 
+    private static final int MAX_API_LEVEL = 29;
+
     private final int mApiLevel;
 
     public SmaliBuilder(int apiLevel) {
         // #3641 - Limit opcode API level to 29 or below (dex version up to 039).
-        mApiLevel = Math.min(apiLevel, 29);
+        mApiLevel = Math.min(apiLevel, MAX_API_LEVEL);
     }
 
     public void build(File smaliDir, File dexFile) throws AndrolibException {
         try {
-            DexBuilder dexBuilder = new DexBuilder(mApiLevel > 0 ? Opcodes.forApi(mApiLevel) : Opcodes.getDefault());
+            DexBuilder dexBuilder = createDexBuilder();
 
-            for (String fileName : new FileDirectory(smaliDir).getFiles(true)) {
-                File smaliFile = new File(smaliDir, fileName);
+            compileSmaliFiles(smaliDir, dexBuilder);
 
-                if (!fileName.endsWith(".smali")) {
-                    Log.w(TAG, "Unknown file type, ignoring: " + smaliFile);
-                    continue;
-                }
-
-                boolean success;
-                Exception cause;
-                try {
-                    success = buildFile(smaliFile, dexBuilder);
-                    cause = null;
-                } catch (Exception ex) {
-                    success = false;
-                    cause = ex;
-                }
-                if (!success) {
-                    AndrolibException ex = new AndrolibException("Could not smali file: " + smaliFile);
-                    if (cause != null) {
-                        ex.initCause(cause);
-                    }
-                    throw ex;
-                }
-            }
-
-            if (dexFile.exists()) {
-                OS.rmfile(dexFile);
-            } else {
-                File parentDir = dexFile.getParentFile();
-                if (parentDir != null) {
-                    OS.mkdir(parentDir);
-                }
-            }
+            prepareOutputFile(dexFile);
 
             dexBuilder.writeTo(new FileDataStore(dexFile));
         } catch (DirectoryException | IOException | RuntimeException ex) {
             throw new AndrolibException("Could not smali folder: " + smaliDir.getName(), ex);
+        }
+    }
+
+    private DexBuilder createDexBuilder() {
+        return new DexBuilder(mApiLevel > 0 ? Opcodes.forApi(mApiLevel) : Opcodes.getDefault());
+    }
+
+    private void compileSmaliFiles(File smaliDir, DexBuilder dexBuilder) throws AndrolibException, DirectoryException {
+        for (String fileName : new FileDirectory(smaliDir).getFiles(true)) {
+            File smaliFile = new File(smaliDir, fileName);
+
+            if (!fileName.endsWith(".smali")) {
+                Log.w(TAG, "Unknown file type, ignoring: " + smaliFile);
+                continue;
+            }
+
+            compileSmaliFile(smaliFile, dexBuilder);
+        }
+    }
+
+    private void compileSmaliFile(File smaliFile, DexBuilder dexBuilder) throws AndrolibException {
+        boolean success;
+        Exception cause;
+        try {
+            success = buildFile(smaliFile, dexBuilder);
+            cause = null;
+        } catch (Exception ex) {
+            success = false;
+            cause = ex;
+        }
+        if (!success) {
+            AndrolibException ex = new AndrolibException("Could not smali file: " + smaliFile);
+            if (cause != null) {
+                ex.initCause(cause);
+            }
+            throw ex;
+        }
+    }
+
+    private void prepareOutputFile(File dexFile) {
+        if (dexFile.exists()) {
+            OS.rmfile(dexFile);
+        } else {
+            File parentDir = dexFile.getParentFile();
+            if (parentDir != null) {
+                OS.mkdir(parentDir);
+            }
         }
     }
 
