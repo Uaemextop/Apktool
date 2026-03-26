@@ -27,6 +27,21 @@ on:
         required: false
         default: false
         type: boolean
+      shorten_res_paths:
+        description: 'Shorten resource paths (--shorten-res-paths / -srp) [APK only]'
+        required: false
+        default: false
+        type: boolean
+      enable_sparse_encoding:
+        description: 'Enable sparse encoding for resources (--enable-sparse-encoding / -ese) [APK only]'
+        required: false
+        default: false
+        type: boolean
+      collapse_res_names:
+        description: 'Collapse resource names (--collapse-res-names / -crn) [APK only]'
+        required: false
+        default: false
+        type: boolean
       extra_args:
         description: 'Additional apktool build arguments (space-separated) [APK only]'
         required: false
@@ -147,6 +162,15 @@ jobs:
           fi
           if [ "${{ inputs.copy_original }}" = "true" ]; then
             BUILD_ARGS="$BUILD_ARGS -c"
+          fi
+          if [ "${{ inputs.shorten_res_paths }}" = "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS --shorten-res-paths"
+          fi
+          if [ "${{ inputs.enable_sparse_encoding }}" = "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS --enable-sparse-encoding"
+          fi
+          if [ "${{ inputs.collapse_res_names }}" = "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS --collapse-res-names"
           fi
 
           EXTRA="${{ inputs.extra_args }}"
