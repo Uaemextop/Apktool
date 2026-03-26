@@ -1,0 +1,197 @@
+name: Recompile APK/JAR
+
+on:
+  workflow_dispatch:
+    inputs:
+      decompiled_repo_url:
+        description: 'URL of the GitHub repository containing the decompiled APK/JAR (e.g. https://github.com/user/repo)'
+        required: true
+        type: string
+      branch:
+        description: 'Branch to clone (optional, defaults to the repository default branch)'
+        required: false
+        default: ''
+        type: string
+      force:
+        description: 'Force delete destination directory (--force / -f) [APK only]'
+        required: false
+        default: true
+        type: boolean
+      no_crunch:
+        description: 'Disable crunching of resource files (--no-crunch / -nc) [APK only]'
+        required: false
+        default: false
+        type: boolean
+      copy_original:
+        description: 'Copy original AndroidManifest.xml and META-INF (--copy-original / -c) [APK only]'
+        required: false
+        default: false
+        type: boolean
+      extra_args:
+        description: 'Additional apktool build arguments (space-separated) [APK only]'
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  recompile:
+    runs-on: ubuntu-latest
+    name: Recompile decompiled APK/JAR
+    steps:
+      - uses: actions/setup-java@v5
+        with:
+          distribution: 'zulu'
+          java-version: 17
+
+      - name: Download apktool from latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p /tmp/apktool-download
+          gh release download --repo "${{ github.repository }}" \
+            --pattern "apktool-*.jar" --dir /tmp/apktool-download
+          JAR_PATH=$(find /tmp/apktool-download -name "apktool-*.jar" | head -1)
+          if [ -z "$JAR_PATH" ]; then
+            echo "::error::Failed to download apktool JAR from latest release"
+            exit 1
+          fi
+          echo "APKTOOL_JAR=$JAR_PATH" >> "$GITHUB_ENV"
+          echo "Downloaded apktool: $JAR_PATH"
+
+      - name: Clone decompiled repository
+        run: |
+          REPO_URL="${{ inputs.decompiled_repo_url }}"
+          # Normalize URL (remove trailing slash)
+          REPO_URL="${REPO_URL%/}"
+          REPO_NAME=$(basename "$REPO_URL")
+
+          BRANCH="${{ inputs.branch }}"
+          if [ -n "$BRANCH" ]; then
+            echo "Cloning branch: $BRANCH"
+            git clone --branch "$BRANCH" "$REPO_URL" "/tmp/decompiled-source"
+          else
+            git clone "$REPO_URL" "/tmp/decompiled-source"
+          fi
+          echo "DECOMPILED_DIR=/tmp/decompiled-source" >> "$GITHUB_ENV"
+          echo "REPO_NAME=$REPO_NAME" >> "$GITHUB_ENV"
+          echo "Cloned decompiled source from: $REPO_URL"
+          ls -la /tmp/decompiled-source/
+
+      - name: Detect source type
+        run: |
+          DECOMPILED_DIR="/tmp/decompiled-source"
+          if [ -f "$DECOMPILED_DIR/apktool.yml" ]; then
+            APK_FILENAME=$(grep 'apkFileName:' "$DECOMPILED_DIR/apktool.yml" | head -1 | sed "s/.*apkFileName:[[:space:]]*//" | sed "s/^[\"']//;s/[\"']$//")
+            if [ -z "$APK_FILENAME" ]; then
+              if [ -f "$DECOMPILED_DIR/AndroidManifest.xml" ]; then
+                echo "SOURCE_TYPE=apk" >> "$GITHUB_ENV"
+                echo "Detected APK decompiled source (apkFileName missing, AndroidManifest.xml found)"
+              else
+                echo "SOURCE_TYPE=jar" >> "$GITHUB_ENV"
+                echo "Detected JAR decompiled source (apkFileName missing, no AndroidManifest.xml)"
+              fi
+            elif echo "$APK_FILENAME" | grep -qi '\.jar$'; then
+              echo "SOURCE_TYPE=jar" >> "$GITHUB_ENV"
+              echo "Detected JAR decompiled source (apkFileName: $APK_FILENAME)"
+            else
+              echo "SOURCE_TYPE=apk" >> "$GITHUB_ENV"
+              echo "Detected APK decompiled source (apkFileName: $APK_FILENAME)"
+            fi
+          elif [ -f "$DECOMPILED_DIR/AndroidManifest.xml" ]; then
+            echo "SOURCE_TYPE=apk" >> "$GITHUB_ENV"
+            echo "Detected APK decompiled source (AndroidManifest.xml found)"
+          else
+            echo "SOURCE_TYPE=jar" >> "$GITHUB_ENV"
+            echo "Detected JAR decompiled source (no apktool.yml or AndroidManifest.xml)"
+          fi
+
+      - name: Download Android 16 framework (API 36)
+        if: env.SOURCE_TYPE == 'apk'
+        run: |
+          sudo apt-get update && sudo apt-get install -y wget unzip
+          mkdir -p /tmp/android-sdk
+          # Download Android SDK command-line tools (update URL when newer versions are released)
+          CMDLINE_TOOLS_URL="https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip"
+          wget -q "$CMDLINE_TOOLS_URL" -O /tmp/cmdline-tools.zip
+          unzip -q /tmp/cmdline-tools.zip -d /tmp/android-sdk/cmdline-tools
+          mv /tmp/android-sdk/cmdline-tools/cmdline-tools /tmp/android-sdk/cmdline-tools/latest
+          export ANDROID_HOME=/tmp/android-sdk
+          export PATH="$ANDROID_HOME/cmdline-tools/latest/bin:$PATH"
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          sdkmanager "platforms;android-36"
+          FRAMEWORK_PATH="$ANDROID_HOME/platforms/android-36/android.jar"
+          echo "Framework downloaded at: $FRAMEWORK_PATH"
+          ls -la "$FRAMEWORK_PATH"
+
+      - name: Install framework into apktool
+        if: env.SOURCE_TYPE == 'apk'
+        run: |
+          ANDROID_HOME=/tmp/android-sdk
+          FRAMEWORK_PATH="$ANDROID_HOME/platforms/android-36/android.jar"
+          java -jar "${{ env.APKTOOL_JAR }}" install-framework "$FRAMEWORK_PATH"
+          echo "Android 16 framework installed successfully."
+
+      - name: Recompile APK
+        if: env.SOURCE_TYPE == 'apk'
+        run: |
+          BUILD_ARGS="b"
+
+          if [ "${{ inputs.force }}" = "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS -f"
+          fi
+          if [ "${{ inputs.no_crunch }}" = "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS -nc"
+          fi
+          if [ "${{ inputs.copy_original }}" = "true" ]; then
+            BUILD_ARGS="$BUILD_ARGS -c"
+          fi
+
+          EXTRA="${{ inputs.extra_args }}"
+          if [ -n "$EXTRA" ]; then
+            BUILD_ARGS="$BUILD_ARGS $EXTRA"
+          fi
+
+          OUTPUT_DIR="/tmp/recompiled-output"
+          BUILD_ARGS="$BUILD_ARGS -o $OUTPUT_DIR/${{ env.REPO_NAME }}.apk"
+
+          echo "Running: java -jar $APKTOOL_JAR $BUILD_ARGS $DECOMPILED_DIR"
+          java -jar "${{ env.APKTOOL_JAR }}" $BUILD_ARGS "${{ env.DECOMPILED_DIR }}"
+
+          echo "OUTPUT_DIR=$OUTPUT_DIR" >> "$GITHUB_ENV"
+          echo "Recompilation complete."
+          ls -la "$OUTPUT_DIR"
+
+      - name: Recompile JAR
+        if: env.SOURCE_TYPE == 'jar'
+        run: |
+          OUTPUT_DIR="/tmp/recompiled-output"
+          mkdir -p "$OUTPUT_DIR"
+
+          echo "Recompiling JAR with apktool..."
+          java -jar "${{ env.APKTOOL_JAR }}" b "${{ env.DECOMPILED_DIR }}" \
+            -o "$OUTPUT_DIR/${{ env.REPO_NAME }}.jar"
+
+          echo "OUTPUT_DIR=$OUTPUT_DIR" >> "$GITHUB_ENV"
+          echo "JAR recompilation complete."
+          ls -la "$OUTPUT_DIR"
+
+      - name: Upload recompiled artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: recompiled-${{ env.SOURCE_TYPE }}
+          path: ${{ env.OUTPUT_DIR }}/*.${{ env.SOURCE_TYPE }}
+
+      - name: Summary
+        run: |
+          echo "## Recompilation Summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Source Repository:** ${{ inputs.decompiled_repo_url }}" >> "$GITHUB_STEP_SUMMARY"
+          BRANCH="${{ inputs.branch }}"
+          if [ -n "$BRANCH" ]; then
+            echo "- **Branch:** $BRANCH" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          echo "- **Source Type:** ${{ env.SOURCE_TYPE }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Output:** ${{ env.REPO_NAME }}.${{ env.SOURCE_TYPE }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- **Artifact:** recompiled-${{ env.SOURCE_TYPE }}" >> "$GITHUB_STEP_SUMMARY"
