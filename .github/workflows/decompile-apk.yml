@@ -32,12 +32,12 @@ on:
         default: true
         type: boolean
       no_debug_info:
-        description: 'Do not write out debug info (--no-debug-info / -b)'
+        description: 'Do not write out debug info (--no-debug-info)'
         required: false
         default: false
         type: boolean
       keep_broken_res:
-        description: 'Keep broken resources (--keep-broken-res / -k)'
+        description: 'Keep broken resources (--keep-broken-res)'
         required: false
         default: false
         type: boolean
@@ -170,10 +170,10 @@ jobs:
             DECODE_ARGS="$DECODE_ARGS -r"
           fi
           if [ "${{ inputs.no_debug_info }}" = "true" ]; then
-            DECODE_ARGS="$DECODE_ARGS -b"
+            DECODE_ARGS="$DECODE_ARGS --no-debug-info"
           fi
           if [ "${{ inputs.keep_broken_res }}" = "true" ]; then
-            DECODE_ARGS="$DECODE_ARGS -k"
+            DECODE_ARGS="$DECODE_ARGS --keep-broken-res"
           fi
           if [ "${{ inputs.only_main_classes }}" = "true" ]; then
             DECODE_ARGS="$DECODE_ARGS --only-main-classes"
