@@ -89,8 +89,9 @@ public class AaptInvoker {
 
             try {
                 OS.exec(cmd.toArray(new String[0]));
-                Log.d(TAG, "aapt2 compile command ran: " + cmd.toString());
+                Log.d(TAG, "aapt2 compile command: " + cmd);
             } catch (BrutException ex) {
+                Log.e(TAG, "aapt2 compile failed. Command: " + cmd);
                 throw new AndrolibException(ex);
             }
 
@@ -185,8 +186,9 @@ public class AaptInvoker {
 
         try {
             OS.exec(cmd.toArray(new String[0]));
-            Log.d(TAG, "aapt2 link command ran: " + cmd.toString());
+            Log.d(TAG, "aapt2 link command: " + cmd);
         } catch (BrutException ex) {
+            Log.e(TAG, "aapt2 link failed. Command: " + cmd);
             throw new AndrolibException(ex);
         }
 
@@ -223,8 +225,9 @@ public class AaptInvoker {
 
             try {
                 OS.exec(cmd.toArray(new String[0]));
-                Log.d(TAG, "aapt2 optimize command ran: " + cmd.toString());
+                Log.d(TAG, "aapt2 optimize command: " + cmd);
             } catch (BrutException ex) {
+                Log.e(TAG, "aapt2 optimize failed. Command: " + cmd);
                 throw new AndrolibException(ex);
             }
         }

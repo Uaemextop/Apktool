@@ -101,6 +101,9 @@ public class Config {
     }
 
     public void setJobs(int jobs) {
+        if (jobs <= 0) {
+            throw new IllegalArgumentException("Number of jobs must be positive, got: " + jobs);
+        }
         mJobs = jobs;
     }
 

@@ -16,6 +16,7 @@
  */
 package brut.androlib.res.xml;
 
+import brut.common.Log;
 import brut.xml.XmlUtils;
 import org.w3c.dom.*;
 import org.xml.sax.SAXException;
@@ -27,6 +28,8 @@ import java.io.*;
 import java.util.*;
 
 public final class ResXmlUtils {
+    private static final String TAG = ResXmlUtils.class.getName();
+
     public static final String ANDROID_RES_NS = "http://schemas.android.com/apk/res/android";
     public static final String ANDROID_RES_NS_AUTO = "http://schemas.android.com/apk/res-auto";
 
@@ -60,7 +63,8 @@ public final class ResXmlUtils {
             if (changed) {
                 XmlUtils.saveDocument(doc, file);
             }
-        } catch (IOException | SAXException | ParserConfigurationException | TransformerException ignored) {
+        } catch (IOException | SAXException | ParserConfigurationException | TransformerException ex) {
+            Log.w(TAG, "Failed to set debuggable attribute in: " + file.getPath());
         }
     }
 
@@ -90,7 +94,8 @@ public final class ResXmlUtils {
             if (changed) {
                 XmlUtils.saveDocument(doc, file);
             }
-        } catch (IOException | SAXException | ParserConfigurationException | TransformerException ignored) {
+        } catch (IOException | SAXException | ParserConfigurationException | TransformerException ex) {
+            Log.w(TAG, "Failed to set network security config in: " + file.getPath());
         }
     }
 
@@ -161,7 +166,8 @@ public final class ResXmlUtils {
             if (changed) {
                 XmlUtils.saveDocument(doc, file);
             }
-        } catch (IOException | SAXException | ParserConfigurationException | TransformerException ignored) {
+        } catch (IOException | SAXException | ParserConfigurationException | TransformerException ex) {
+            Log.w(TAG, "Failed to modify network security config: " + file.getPath());
         }
     }
 
@@ -192,7 +198,8 @@ public final class ResXmlUtils {
             if (changed) {
                 XmlUtils.saveDocument(doc, file);
             }
-        } catch (IOException | SAXException | ParserConfigurationException | TransformerException ignored) {
+        } catch (IOException | SAXException | ParserConfigurationException | TransformerException ex) {
+            Log.w(TAG, "Failed to remove manifest versions from: " + file.getPath());
         }
     }
 
@@ -215,7 +222,8 @@ public final class ResXmlUtils {
             }
 
             return featureFlags;
-        } catch (IOException | SAXException | ParserConfigurationException | XPathExpressionException ignored) {
+        } catch (IOException | SAXException | ParserConfigurationException | XPathExpressionException ex) {
+            Log.w(TAG, "Failed to pull feature flags from: " + file.getPath());
             return null;
         }
     }
@@ -258,7 +266,8 @@ public final class ResXmlUtils {
                 XmlUtils.saveDocument(doc, file);
             }
         } catch (IOException | SAXException | ParserConfigurationException | XPathExpressionException
-                | TransformerException ignored) {
+                | TransformerException ex) {
+            Log.w(TAG, "Failed to fix public attrs in provider attributes: " + file.getPath());
         }
     }
 
@@ -321,7 +330,8 @@ public final class ResXmlUtils {
             String expression = String.format("/resources/%s[@name='%s']/text()", type, key);
 
             return XmlUtils.evaluateXPath(doc, expression, String.class);
-        } catch (IOException | SAXException | ParserConfigurationException | XPathExpressionException ignored) {
+        } catch (IOException | SAXException | ParserConfigurationException | XPathExpressionException ex) {
+            Log.w(TAG, "Failed to pull value from: " + file.getPath());
             return null;
         }
     }

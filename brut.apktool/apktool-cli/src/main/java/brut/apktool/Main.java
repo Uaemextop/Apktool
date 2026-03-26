@@ -414,35 +414,32 @@ public class Main {
 
     private static void cmdDecode(String[] args) throws AndrolibException {
         CommandLine cli = parseOptions(decodeOptions, args);
-        List<String> argList = cli.getArgList();
-        String apkName;
-        switch (argList.size()) {
-            case 0:
-                System.err.println("Input apk file was not specified.");
-                System.exit(1);
-                return;
-            case 1:
-                apkName = argList.get(0);
-                break;
-            default:
-                System.err.println("Invalid arguments.");
-                printUsage();
-                System.exit(1);
-                return;
-        }
+        String apkName = parseRequiredInput(cli, "apk file");
 
-        if (cli.hasOption(jobsOption)) {
-            config.setJobs(Integer.parseInt(cli.getOptionValue(jobsOption)));
-        }
-        if (cli.hasOption(frameDirOption)) {
-            config.setFrameworkDirectory(cli.getOptionValue(frameDirOption));
-        }
+        applyCommonOptions(cli);
         if (cli.hasOption(frameTagOption)) {
             config.setFrameworkTag(cli.getOptionValue(frameTagOption));
         }
-        if (cli.hasOption(libOption)) {
-            config.setLibraryFiles(cli.getOptionValues(libOption));
+        applyDecodeOptions(cli);
+
+        File outDir;
+        if (cli.hasOption(decodeOutputOption)) {
+            outDir = new File(cli.getOptionValue(decodeOutputOption));
+        } else {
+            outDir = new File(apkName.endsWith(".apk")
+                ? apkName.substring(0, apkName.length() - 4).trim()
+                : apkName + ".out");
         }
+
+        try {
+            new ApkDecoder(new File(apkName), config).decode(outDir);
+        } catch (InFileNotFoundException | OutDirExistsException | FrameworkNotFoundException ex) {
+            System.err.println(ex.getMessage());
+            System.exit(1);
+        }
+    }
+
+    private static void applyDecodeOptions(CommandLine cli) {
         if (cli.hasOption(decodeForceOption)) {
             config.setForced(true);
         }
@@ -474,29 +471,7 @@ public class Main {
             }
         }
         if (cli.hasOption(decodeResResolveModeOption)) {
-            if (cli.hasOption(decodeNoResOption)) {
-                printOptionConflict(decodeResResolveModeOption, decodeNoResOption);
-            } else if (cli.hasOption(decodeOnlyManifestOption)) {
-                printOptionConflict(decodeResResolveModeOption, decodeOnlyManifestOption);
-            } else {
-                String mode = cli.getOptionValue(decodeResResolveModeOption);
-                switch (mode) {
-                    case "default":
-                        config.setDecodeResolve(Config.DecodeResolve.DEFAULT);
-                        break;
-                    case "greedy":
-                        config.setDecodeResolve(Config.DecodeResolve.GREEDY);
-                        break;
-                    case "lazy":
-                        config.setDecodeResolve(Config.DecodeResolve.LAZY);
-                        break;
-                    default:
-                        System.err.println("Unknown resolve resources mode: " + mode);
-                        System.err.println("Expect: 'default', 'greedy' or 'lazy'.");
-                        System.exit(1);
-                        return;
-                }
-            }
+            applyDecodeResolveMode(cli);
         }
         if (cli.hasOption(decodeKeepBrokenResOption)) {
             if (cli.hasOption(decodeNoResOption)) {
@@ -520,51 +495,53 @@ public class Main {
         if (cli.hasOption(decodeNoAssetsOption)) {
             config.setDecodeAssets(Config.DecodeAssets.NONE);
         }
+    }
 
-        File outDir;
-        if (cli.hasOption(decodeOutputOption)) {
-            outDir = new File(cli.getOptionValue(decodeOutputOption));
+    private static void applyDecodeResolveMode(CommandLine cli) {
+        if (cli.hasOption(decodeNoResOption)) {
+            printOptionConflict(decodeResResolveModeOption, decodeNoResOption);
+        } else if (cli.hasOption(decodeOnlyManifestOption)) {
+            printOptionConflict(decodeResResolveModeOption, decodeOnlyManifestOption);
         } else {
-            outDir = new File(apkName.endsWith(".apk")
-                ? apkName.substring(0, apkName.length() - 4).trim()
-                : apkName + ".out");
-        }
-
-        try {
-            new ApkDecoder(new File(apkName), config).decode(outDir);
-        } catch (InFileNotFoundException | OutDirExistsException | FrameworkNotFoundException ex) {
-            System.err.println(ex.getMessage());
-            System.exit(1);
+            String mode = cli.getOptionValue(decodeResResolveModeOption);
+            switch (mode) {
+                case "default":
+                    config.setDecodeResolve(Config.DecodeResolve.DEFAULT);
+                    break;
+                case "greedy":
+                    config.setDecodeResolve(Config.DecodeResolve.GREEDY);
+                    break;
+                case "lazy":
+                    config.setDecodeResolve(Config.DecodeResolve.LAZY);
+                    break;
+                default:
+                    System.err.println("Unknown resolve resources mode: " + mode);
+                    System.err.println("Expect: 'default', 'greedy' or 'lazy'.");
+                    System.exit(1);
+            }
         }
     }
 
     private static void cmdBuild(String[] args) throws AndrolibException {
         CommandLine cli = parseOptions(buildOptions, args);
-        List<String> argList = cli.getArgList();
-        String apkDirName;
-        switch (argList.size()) {
-            case 0:
-                apkDirName = "."; // current directory
-                break;
-            case 1:
-                apkDirName = argList.get(0);
-                break;
-            default:
-                System.err.println("Invalid arguments.");
-                printUsage();
-                System.exit(1);
-                return;
+        String apkDirName = parseOptionalInput(cli, ".");
+
+        applyCommonOptions(cli);
+        applyBuildOptions(cli);
+
+        File outFile = null;
+        if (cli.hasOption(buildOutputOption)) {
+            if (cli.hasOption(buildNoApkOption)) {
+                printOptionConflict(buildOutputOption, buildNoApkOption);
+            } else {
+                outFile = new File(cli.getOptionValue(buildOutputOption));
+            }
         }
 
-        if (cli.hasOption(jobsOption)) {
-            config.setJobs(Integer.parseInt(cli.getOptionValue(jobsOption)));
-        }
-        if (cli.hasOption(frameDirOption)) {
-            config.setFrameworkDirectory(cli.getOptionValue(frameDirOption));
-        }
-        if (cli.hasOption(libOption)) {
-            config.setLibraryFiles(cli.getOptionValues(libOption));
-        }
+        new ApkBuilder(new File(apkDirName), config).build(outFile);
+    }
+
+    private static void applyBuildOptions(CommandLine cli) {
         if (cli.hasOption(buildForceOption)) {
             config.setForced(true);
         }
@@ -603,101 +580,35 @@ public class Main {
             } catch (AndrolibException ex) {
                 System.err.println(ex.getMessage());
                 System.exit(1);
-                return;
             }
         }
-
-        File outFile = null;
-        if (cli.hasOption(buildOutputOption)) {
-            if (cli.hasOption(buildNoApkOption)) {
-                printOptionConflict(buildOutputOption, buildNoApkOption);
-            } else {
-                outFile = new File(cli.getOptionValue(buildOutputOption));
-            }
-        }
-
-        new ApkBuilder(new File(apkDirName), config).build(outFile);
     }
 
     private static void cmdInstallFramework(String[] args) throws AndrolibException {
         CommandLine cli = parseOptions(installFrameworkOptions, args);
-        List<String> argList = cli.getArgList();
-        String apkName;
-        switch (argList.size()) {
-            case 0:
-                System.err.println("Input apk file was not specified.");
-                System.exit(1);
-                return;
-            case 1:
-                apkName = argList.get(0);
-                break;
-            default:
-                System.err.println("Invalid arguments.");
-                printUsage();
-                System.exit(1);
-                return;
-        }
+        String apkName = parseRequiredInput(cli, "apk file");
 
-        if (cli.hasOption(frameFrameDirOption)) {
-            config.setFrameworkDirectory(cli.getOptionValue(frameFrameDirOption));
-        }
-        if (cli.hasOption(frameFrameTagOption)) {
-            config.setFrameworkTag(cli.getOptionValue(frameFrameTagOption));
-        }
+        applyFrameworkDirOptions(cli);
 
         new Framework(config).install(new File(apkName));
     }
 
     private static void cmdCleanFrameworks(String[] args) throws AndrolibException {
         CommandLine cli = parseOptions(cleanFrameworksOptions, args);
-        List<String> argList = cli.getArgList();
-        if (!argList.isEmpty()) {
-            System.err.println("Invalid arguments.");
-            printUsage();
-            System.exit(1);
-            return;
-        }
+        validateNoExtraArgs(cli);
 
-        if (cli.hasOption(frameFrameDirOption)) {
-            config.setFrameworkDirectory(cli.getOptionValue(frameFrameDirOption));
-        }
-        if (cli.hasOption(frameFrameTagOption)) {
-            config.setFrameworkTag(cli.getOptionValue(frameFrameTagOption));
-        }
-        if (cli.hasOption(frameForceAllOption)) {
-            if (cli.hasOption(frameFrameTagOption)) {
-                printOptionConflict(frameForceAllOption, frameFrameTagOption);
-            } else {
-                config.setForced(true);
-            }
-        }
+        applyFrameworkDirOptions(cli);
+        applyFrameworkForceAllOption(cli);
 
         new Framework(config).cleanDirectory();
     }
 
     private static void cmdListFrameworks(String[] args) throws AndrolibException {
         CommandLine cli = parseOptions(listFrameworksOptions, args);
-        List<String> argList = cli.getArgList();
-        if (!argList.isEmpty()) {
-            System.err.println("Invalid arguments.");
-            printUsage();
-            System.exit(1);
-            return;
-        }
+        validateNoExtraArgs(cli);
 
-        if (cli.hasOption(frameFrameDirOption)) {
-            config.setFrameworkDirectory(cli.getOptionValue(frameFrameDirOption));
-        }
-        if (cli.hasOption(frameFrameTagOption)) {
-            config.setFrameworkTag(cli.getOptionValue(frameFrameTagOption));
-        }
-        if (cli.hasOption(frameForceAllOption)) {
-            if (cli.hasOption(frameFrameTagOption)) {
-                printOptionConflict(frameForceAllOption, frameFrameTagOption);
-            } else {
-                config.setForced(true);
-            }
-        }
+        applyFrameworkDirOptions(cli);
+        applyFrameworkForceAllOption(cli);
 
         for (File file : new Framework(config).listDirectory()) {
             System.out.println(file.getName());
@@ -706,24 +617,80 @@ public class Main {
 
     private static void cmdPublicizeResources(String[] args) throws AndrolibException {
         CommandLine cli = parseOptions(publicizeResourcesOptions, args);
+        String arscName = parseRequiredInput(cli, "arsc file");
+
+        new Framework(config).publicizeResources(new File(arscName));
+    }
+
+    private static String parseRequiredInput(CommandLine cli, String inputDescription) {
         List<String> argList = cli.getArgList();
-        String arscName;
         switch (argList.size()) {
             case 0:
-                System.err.println("Input arsc file was not specified.");
+                System.err.println("Input " + inputDescription + " was not specified.");
                 System.exit(1);
-                return;
+                return null;
             case 1:
-                arscName = argList.get(0);
-                break;
+                return argList.get(0);
             default:
                 System.err.println("Invalid arguments.");
                 printUsage();
                 System.exit(1);
-                return;
+                return null;
         }
+    }
 
-        new Framework(config).publicizeResources(new File(arscName));
+    private static String parseOptionalInput(CommandLine cli, String defaultValue) {
+        List<String> argList = cli.getArgList();
+        switch (argList.size()) {
+            case 0:
+                return defaultValue;
+            case 1:
+                return argList.get(0);
+            default:
+                System.err.println("Invalid arguments.");
+                printUsage();
+                System.exit(1);
+                return null;
+        }
+    }
+
+    private static void validateNoExtraArgs(CommandLine cli) {
+        if (!cli.getArgList().isEmpty()) {
+            System.err.println("Invalid arguments.");
+            printUsage();
+            System.exit(1);
+        }
+    }
+
+    private static void applyCommonOptions(CommandLine cli) {
+        if (cli.hasOption(jobsOption)) {
+            config.setJobs(Integer.parseInt(cli.getOptionValue(jobsOption)));
+        }
+        if (cli.hasOption(frameDirOption)) {
+            config.setFrameworkDirectory(cli.getOptionValue(frameDirOption));
+        }
+        if (cli.hasOption(libOption)) {
+            config.setLibraryFiles(cli.getOptionValues(libOption));
+        }
+    }
+
+    private static void applyFrameworkDirOptions(CommandLine cli) {
+        if (cli.hasOption(frameFrameDirOption)) {
+            config.setFrameworkDirectory(cli.getOptionValue(frameFrameDirOption));
+        }
+        if (cli.hasOption(frameFrameTagOption)) {
+            config.setFrameworkTag(cli.getOptionValue(frameFrameTagOption));
+        }
+    }
+
+    private static void applyFrameworkForceAllOption(CommandLine cli) {
+        if (cli.hasOption(frameForceAllOption)) {
+            if (cli.hasOption(frameFrameTagOption)) {
+                printOptionConflict(frameForceAllOption, frameFrameTagOption);
+            } else {
+                config.setForced(true);
+            }
+        }
     }
 
     private static void printOptionConflict(Option option, Option conflict) {
