@@ -7,6 +7,11 @@ on:
         description: 'URL of the GitHub repository containing the decompiled APK/JAR (e.g. https://github.com/user/repo)'
         required: true
         type: string
+      branch:
+        description: 'Branch to clone (optional, defaults to the repository default branch)'
+        required: false
+        default: ''
+        type: string
       use_aapt2:
         description: 'Use aapt2 during build (--use-aapt2) [APK only]'
         required: false
@@ -68,7 +73,13 @@ jobs:
           REPO_URL="${REPO_URL%/}"
           REPO_NAME=$(basename "$REPO_URL")
 
-          git clone "$REPO_URL" "/tmp/decompiled-source"
+          BRANCH="${{ inputs.branch }}"
+          if [ -n "$BRANCH" ]; then
+            echo "Cloning branch: $BRANCH"
+            git clone --branch "$BRANCH" "$REPO_URL" "/tmp/decompiled-source"
+          else
+            git clone "$REPO_URL" "/tmp/decompiled-source"
+          fi
           echo "DECOMPILED_DIR=/tmp/decompiled-source" >> "$GITHUB_ENV"
           echo "REPO_NAME=$REPO_NAME" >> "$GITHUB_ENV"
           echo "Cloned decompiled source from: $REPO_URL"
@@ -168,6 +179,10 @@ jobs:
         run: |
           echo "## Recompilation Summary" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Source Repository:** ${{ inputs.decompiled_repo_url }}" >> "$GITHUB_STEP_SUMMARY"
+          BRANCH="${{ inputs.branch }}"
+          if [ -n "$BRANCH" ]; then
+            echo "- **Branch:** $BRANCH" >> "$GITHUB_STEP_SUMMARY"
+          fi
           echo "- **Source Type:** ${{ env.SOURCE_TYPE }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Output:** ${{ env.REPO_NAME }}.${{ env.SOURCE_TYPE }}" >> "$GITHUB_STEP_SUMMARY"
           echo "- **Artifact:** recompiled-${{ env.SOURCE_TYPE }}" >> "$GITHUB_STEP_SUMMARY"
