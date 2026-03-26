@@ -1,15 +1,58 @@
 version: 2
+
+enable-beta-ecosystems: true
+
+registries:
+  maven-central:
+    type: maven-repository
+    url: https://repo.maven.apache.org/maven2
+  google-maven:
+    type: maven-repository
+    url: https://maven.google.com
+
 updates:
   - package-ecosystem: github-actions
-    directory: /
+    directories:
+      - "/**"
     schedule:
       interval: weekly
       time: "04:00"
       timezone: "America/New_York"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
 
   - package-ecosystem: gradle
-    directory: /
+    directories:
+      - "/**"
+    registries:
+      - maven-central
+      - google-maven
     schedule:
       interval: weekly
       time: "04:00"
       timezone: "America/New_York"
+    groups:
+      commons-libs:
+        patterns:
+          - "commons-cli:*"
+          - "commons-io:*"
+          - "org.apache.commons:*"
+      smali:
+        patterns:
+          - "org.smali:*"
+      testing:
+        patterns:
+          - "junit:*"
+          - "org.xmlunit:*"
+      google:
+        patterns:
+          - "com.google.guava:*"
+          - "com.android.tools:*"
+      gradle-plugins:
+        patterns:
+          - "com.vanniktech.*:*"
+      other-dependencies:
+        patterns:
+          - "xmlpull:*"
