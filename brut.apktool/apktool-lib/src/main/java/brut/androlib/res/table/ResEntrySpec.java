@@ -42,14 +42,16 @@ public class ResEntrySpec {
         if (len == 0) {
             return false;
         }
-        // Must start with a valid Java identifier start character.
-        if (!Character.isJavaIdentifierStart(name.charAt(0))) {
+        // Must start with a valid Java identifier start character, but not '$' (aapt2 rejects it).
+        char first = name.charAt(0);
+        if (!Character.isJavaIdentifierStart(first) || first == '$') {
             return false;
         }
         // The rest must be valid Java identifier part characters or any of the whitelisted special characters.
+        // '$' is excluded because aapt2 does not allow it in resource entry names.
         for (int i = 1; i < len; i++) {
             char ch = name.charAt(i);
-            if (!Character.isJavaIdentifierPart(ch) && ch != '.' && ch != '-') {
+            if (ch == '$' || (!Character.isJavaIdentifierPart(ch) && ch != '.' && ch != '-')) {
                 return false;
             }
         }
