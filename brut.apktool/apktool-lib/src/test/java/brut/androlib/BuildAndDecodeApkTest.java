@@ -336,11 +336,14 @@ public class BuildAndDecodeApkTest extends BaseTest {
 
     @Test
     public void leadingDollarSignResourceNameTest() throws Exception {
-        compareXmlFiles("res/drawable/$avd_hide_password__0.xml");
-        compareXmlFiles("res/drawable/$avd_show_password__0.xml");
-        compareXmlFiles("res/drawable/$avd_show_password__1.xml");
-        compareXmlFiles("res/drawable/$avd_show_password__2.xml");
-        compareXmlFiles("res/drawable/avd_show_password.xml");
+        // Resources with leading '$' are renamed to avoid aapt2 "invalid entry name" errors.
+        assertFalse(new File(sTestNewDir, "res/drawable/$avd_hide_password__0.xml").exists());
+        assertFalse(new File(sTestNewDir, "res/drawable/$avd_show_password__0.xml").exists());
+        assertFalse(new File(sTestNewDir, "res/drawable/$avd_show_password__1.xml").exists());
+        assertFalse(new File(sTestNewDir, "res/drawable/$avd_show_password__2.xml").exists());
+
+        // Non-dollar-sign resource should still be decoded.
+        assertTrue(new File(sTestNewDir, "res/drawable/avd_show_password.xml").exists());
     }
 
     @Test
